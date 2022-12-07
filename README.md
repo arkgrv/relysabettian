@@ -1,4 +1,4 @@
-# Elysabettian - Rust implementation of the Elysabettian Scrpting Language
+# Elysabettian - Rust implementation of the Elysabettian Scripting Language
 
 ## 1. Introduction
 
