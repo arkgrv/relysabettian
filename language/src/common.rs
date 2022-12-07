@@ -1,6 +1,5 @@
-
 /// Max UINT8_COUNT value
-pub const UINT8_COUNT: u16 = (u8::MAX as u16 + 1);
+pub const UINT8_COUNT: u16 = u8::MAX as u16 + 1;
 
 /// Language version
 pub const VERSION: &str = "1.0.0a";
