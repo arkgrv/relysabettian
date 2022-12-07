@@ -5,9 +5,6 @@ pub mod common;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::token::*;
-    use super::tokenizer::*;
-    use super::common::*;
 
     #[test]
     fn is_version_ok() {
