@@ -1,3 +1,5 @@
+use std::borrow::{BorrowMut, Borrow};
+
 use super::token::{Token, TokenType};
 
 /// Tokenizer:
@@ -19,6 +21,98 @@ impl Tokenizer {
             start: 0usize,
             current: 0usize,
             line: 0i32,
+        }
+    }
+    
+    /// Scan a token
+    pub fn scan_token(&mut self) -> Token {
+        self.skip_whitespace();
+
+        self.start = self.current;
+
+        if self.is_at_end() {
+            return self.make_token(TokenType::Eof);
+        }
+
+        let c = self.advance();
+
+        if c.is_numeric() {
+            return self.number();
+        }
+        if c.is_alphabetic() {
+            return self.identifier();
+        }
+
+        match c {
+            '(' => {
+                return self.make_token(TokenType::OpenParen);
+            },
+            ')' => {
+                return self.make_token(TokenType::CloseParen);
+            },
+            '{' => {
+                return self.make_token(TokenType::OpenCurly);
+            },
+            '}' => {
+                return self.make_token(TokenType::CloseCurly);
+            },
+            ';' => {
+                return self.make_token(TokenType::Semicolon);
+            },
+            ',' => {
+                return self.make_token(TokenType::Comma);
+            },
+            '.' => {
+                return self.make_token(TokenType::Dot);
+            },
+            '-' => {
+                return self.make_token(TokenType::Minus);
+            },
+            '+' => {
+                return self.make_token(TokenType::Plus);
+            },
+            '/' => {
+                return self.make_token(TokenType::Slash);
+            },
+            '*' => {
+                return self.make_token(TokenType::Star);
+            },
+            '^' => {
+                return self.make_token(TokenType::BwXor);
+            },
+            '&' => {
+                let t_type = if self.match_char('&') { TokenType::And } else { TokenType::BwAnd };
+                return self.make_token(t_type);
+            },
+            '|' => {
+                let t_type = if self.match_char('|') { TokenType::Or } else { TokenType::BwOr };
+                return self.make_token(t_type);
+            },
+            '!' => {
+                let t_type = if self.match_char('=') { TokenType::ExclEqual } else { TokenType::Equal };
+                return self.make_token(t_type);
+            },
+            '=' => {
+                let t_type = if self.match_char('=') { TokenType::EqualEqual } else { TokenType::Equal };
+                return self.make_token(t_type);
+            },
+            '<' => {
+                let t_type = if self.match_char('=') { TokenType::LessEqual } else { TokenType::Less };
+                return self.make_token(t_type);
+            },
+            '>' => {
+                let t_type = if self.match_char('=') { TokenType::GreaterEqual } else { TokenType::Greater };
+                return self.make_token(t_type);
+            },
+            '"' => {
+                return self.string('"');
+            },
+            '\'' => {
+                return self.string('\'');
+            },
+            _ => {
+                return self.error_token("Unidentified character!".to_string());
+            }
         }
     }
 

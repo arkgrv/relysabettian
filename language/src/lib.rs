@@ -17,4 +17,16 @@ mod tests {
         const VERSION_FULL: &str = "Elysabettian 1.0.0a Maurizio (Rust JIT)";
         assert_eq!(VERSION_FULL, common::VERSION_FULL);
     }
+
+    #[test]
+    fn tokenize_variable() {
+        // Input source code:
+        const SOURCE: &str = "var x = 5";
+        // Tokens vector
+        let tokens = Vec::<token::Token>::new();
+        // Create a new tokenizer with the input source code
+        let tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+
+        
+    }
 }
