@@ -1,6 +1,6 @@
 
 /// Describes a single language token type
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum TokenType {
     // Single character tokens
     OpenParen, CloseParen,
@@ -34,7 +34,7 @@ pub enum TokenType {
 }
 
 /// Represents a single language token
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Token {
     pub t_type: TokenType,
     pub text: String,

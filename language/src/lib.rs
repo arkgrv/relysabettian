@@ -4,6 +4,8 @@ pub mod common;
 
 #[cfg(test)]
 mod tests {
+    use crate::token::TokenType;
+
     use super::*;
 
     #[test]
@@ -23,10 +25,19 @@ mod tests {
         // Input source code:
         const SOURCE: &str = "var x = 5";
         // Tokens vector
-        let tokens = Vec::<token::Token>::new();
+        let mut tokens = Vec::<token::Token>::new();
         // Create a new tokenizer with the input source code
-        let tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+        let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
 
-        
+        loop {
+            let token = tokenizer.scan_token();
+            if token.t_type == TokenType::Eof {
+                break;
+            }
+
+            println!("{:?}", token);
+
+            tokens.push(token);
+        }
     }
 }
