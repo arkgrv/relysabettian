@@ -1,5 +1,3 @@
-use std::borrow::{BorrowMut, Borrow};
-
 use super::token::{Token, TokenType};
 
 /// Tokenizer:
@@ -159,7 +157,7 @@ impl Tokenizer {
     /// Create a new token with specified type
     fn make_token(&self, t_type: TokenType) -> Token {
         let text: String = self.source.chars()
-                    .skip(self.current)
+                    .skip(self.start)
                     .take(self.current - self.start)
                     .collect();
 
@@ -294,7 +292,7 @@ impl Tokenizer {
             self.advance();
         }
 
-        let mut ident = self.identifier_type();
+        let ident = self.identifier_type();
         self.make_token(ident)
     }
 
@@ -306,7 +304,7 @@ impl Tokenizer {
 
         if self.peek() == '.' && self.peek_next().is_numeric() {
             self.advance();
-            while (self.peek().is_numeric()) {
+            while self.peek().is_numeric() {
                 self.advance();
             }
         }
