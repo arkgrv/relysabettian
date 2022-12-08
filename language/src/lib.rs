@@ -28,13 +28,9 @@ mod tests {
     /// consistent with the provided source code input
     #[test]
     fn tokenize_variable() {
-        // Input source code:
         const SOURCE: &str = "var x = 5;";
-        // Number of tokens to be extracted
         const MAX_TOKENS: usize = 5usize;
-        // Tokens vector
         let mut tokens = Vec::<token::Token>::new();
-        // Create a new tokenizer with the input source code
         let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
 
         loop {
@@ -45,40 +41,97 @@ mod tests {
             tokens.push(token);
         }
 
-        // Check if length is 5
         assert_eq!(tokens.len(), MAX_TOKENS);
 
-        // Tokens to compare
-        let first_tok = token::Token {
-            t_type: TokenType::Var,
-            text: "var".to_string(),
-            line: 1i32,
-        };
-        let second_tok = token::Token {
-            t_type: TokenType::Identifier,
-            text: "x".to_string(),
-            line: 1i32,
-        };
-        let third_tok = token::Token {
-            t_type: TokenType::Equal,
-            text: "=".to_string(),
-            line: 1i32,
-        };
-        let fourth_tok = token::Token {
-            t_type: TokenType::Number,
-            text: "5".to_string(),
-            line: 1i32,
-        };
-        let fifth_tok = token::Token {
-            t_type: TokenType::Semicolon,
-            text: ";".to_string(),
-            line: 1i32,
-        };
+        let expected = vec![
+            token::Token::new(TokenType::Var, "var".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "x".to_string(), 1i32),
+            token::Token::new(TokenType::Equal, "=".to_string(), 1i32),
+            token::Token::new(TokenType::Number, "5".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32)
+        ];
 
-        assert_eq!(first_tok, tokens[0]);
-        assert_eq!(second_tok, tokens[1]);
-        assert_eq!(third_tok, tokens[2]);
-        assert_eq!(fourth_tok, tokens[3]);
-        assert_eq!(fifth_tok, tokens[4]);
+        assert_eq!(tokens, expected);
+    }
+
+    /// Check if the function is tokenized correctly
+    #[test]
+    fn tokenize_function() {
+        const SOURCE: &str = "func ident(x) { return x; }";
+        const MAX_TOKENS: usize = 9usize;
+        let mut tokens = Vec::<token::Token>::new();
+        let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+        loop {
+            let token = tokenizer.scan_token();
+            if token.t_type == TokenType::Eof {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        assert_eq!(tokens.len(), MAX_TOKENS);
+
+        let expected = vec![
+            token::Token::new(TokenType::Func, "func".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "ident".to_string(), 1i32),
+            token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "x".to_string(), 1i32),
+            token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
+            token::Token::new(TokenType::OpenCurly, "{".to_string(), 1i32),
+            token::Token::new(TokenType::Return, "return".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "x".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
+            token::Token::new(TokenType::CloseCurly, "}".to_string(), 1i32)
+        ];
+
+        assert_eq!(tokens, expected);
+    }
+
+    /// Check if the for loop is tokenized correctly
+    #[test]
+    fn tokenizer_for() {
+        const SOURCE: &str = "for (var i = 0; i < 4; i = i + 1) { print(1); }";
+        const MAX_TOKENS: usize = 24;
+        let mut tokens = Vec::<token::Token>::new();
+        let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+
+        loop {
+            let token = tokenizer.scan_token();
+            if token.t_type == TokenType::Eof {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        assert_eq!(tokens.len(), MAX_TOKENS);
+
+        let expected = vec![
+            token::Token::new(TokenType::For, "for".to_string(), 1i32),
+            token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
+            token::Token::new(TokenType::Var, "var".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "i".to_string(), 1i32),
+            token::Token::new(TokenType::Equal, "=".to_string(), 1i32),
+            token::Token::new(TokenType::Number, "0".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "i".to_string(), 1i32),
+            token::Token::new(TokenType::Less, "<".to_string(), 1i32),
+            token::Token::new(TokenType::Number, "4".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "i".to_string(), 1i32),
+            token::Token::new(TokenType::Equal, "=".to_string(), 1i32),
+            token::Token::new(TokenType::Identifier, "i".to_string(), 1i32),
+            token::Token::new(TokenType::Plus, "+".to_string(), 1i32),
+            token::Token::new(TokenType::Number, "1".to_string(), 1i32),
+            token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
+            token::Token::new(TokenType::OpenCurly, "{".to_string(), 1i32),
+            token::Token::new(TokenType::Print, "print".to_string(), 1i32),
+            token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
+            token::Token::new(TokenType::Number, "1".to_string(), 1i32),
+            token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
+            token::Token::new(TokenType::CloseCurly, "}".to_string(), 1i32)
+        ];
+
+        assert_eq!(tokens, expected);
     }
 }
