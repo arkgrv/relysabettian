@@ -1,5 +1,6 @@
 
 /// Opcodes supported by JIT
+#[repr(u8)]
 pub enum Opcode {
     Constant,
     Nop,
@@ -42,4 +43,14 @@ pub enum Opcode {
     BwOr,
     BwXor,
     BwNot,
+}
+
+/// Using unsafe (but fast) Rust to convert to Opcode from u8
+impl Into<Opcode> for u8 {
+    fn into(self) -> Opcode {
+        let ret = unsafe {
+            std::mem::transmute::<u8, Opcode>(self)
+        };
+        ret
+    }
 }

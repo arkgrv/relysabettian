@@ -1,4 +1,5 @@
 pub mod opcodes;
+pub mod value;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
