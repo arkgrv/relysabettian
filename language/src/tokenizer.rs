@@ -20,7 +20,7 @@ impl Tokenizer {
             source: source.clone(),
             start: 0usize,
             current: 0usize,
-            line: 0i32,
+            line: 1i32,
         }
     }
     
