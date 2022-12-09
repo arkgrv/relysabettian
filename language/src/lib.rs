@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn tokenize_function() {
         const SOURCE: &str = "func ident(x) { return x; }";
-        const MAX_TOKENS: usize = 9usize;
+        const MAX_TOKENS: usize = 10usize;
         let mut tokens = Vec::<token::Token>::new();
         let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
         loop {
