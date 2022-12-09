@@ -42,75 +42,45 @@ impl Tokenizer {
         }
 
         match c {
-            '(' => {
-                return self.make_token(TokenType::OpenParen);
-            },
-            ')' => {
-                return self.make_token(TokenType::CloseParen);
-            },
-            '{' => {
-                return self.make_token(TokenType::OpenCurly);
-            },
-            '}' => {
-                return self.make_token(TokenType::CloseCurly);
-            },
-            ';' => {
-                return self.make_token(TokenType::Semicolon);
-            },
-            ',' => {
-                return self.make_token(TokenType::Comma);
-            },
-            '.' => {
-                return self.make_token(TokenType::Dot);
-            },
-            '-' => {
-                return self.make_token(TokenType::Minus);
-            },
-            '+' => {
-                return self.make_token(TokenType::Plus);
-            },
-            '/' => {
-                return self.make_token(TokenType::Slash);
-            },
-            '*' => {
-                return self.make_token(TokenType::Star);
-            },
-            '^' => {
-                return self.make_token(TokenType::BwXor);
-            },
+            '(' => self.make_token(TokenType::OpenParen),
+            ')' => self.make_token(TokenType::CloseParen),
+            '{' => self.make_token(TokenType::OpenCurly),
+            '}' => self.make_token(TokenType::CloseCurly),
+            ';' => self.make_token(TokenType::Semicolon),
+            ',' => self.make_token(TokenType::Comma),
+            '.' => self.make_token(TokenType::Dot),
+            '-' => self.make_token(TokenType::Minus),
+            '+' => self.make_token(TokenType::Plus),
+            '/' => self.make_token(TokenType::Slash),
+            '*' => self.make_token(TokenType::Star),
+            '^' => self.make_token(TokenType::BwXor),
             '&' => {
                 let t_type = if self.match_char('&') { TokenType::And } else { TokenType::BwAnd };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
             '|' => {
                 let t_type = if self.match_char('|') { TokenType::Or } else { TokenType::BwOr };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
             '!' => {
                 let t_type = if self.match_char('=') { TokenType::ExclEqual } else { TokenType::Equal };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
             '=' => {
                 let t_type = if self.match_char('=') { TokenType::EqualEqual } else { TokenType::Equal };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
             '<' => {
                 let t_type = if self.match_char('=') { TokenType::LessEqual } else { TokenType::Less };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
             '>' => {
                 let t_type = if self.match_char('=') { TokenType::GreaterEqual } else { TokenType::Greater };
-                return self.make_token(t_type);
+                self.make_token(t_type)
             },
-            '"' => {
-                return self.string('"');
-            },
-            '\'' => {
-                return self.string('\'');
-            },
-            _ => {
-                return self.error_token("Unidentified character!".to_string());
-            }
+            '"' => self.string('"'),
+            '\'' => self.string('\''),
+            _ => self.error_token("Unidentified character!".to_string())
         }
     }
 
@@ -222,66 +192,38 @@ impl Tokenizer {
         let start = self.source.chars().nth(self.start).unwrap();
 
         match start {
-            'c' => {
-                return self.check_keyword(1, 4, "lass".to_string(), TokenType::Class);
-            },
-            'e' => {
-                return self.check_keyword(1, 3, "lse".to_string(), TokenType::Else);
-            },
+            'c' => self.check_keyword(1, 4, "lass".to_string(), TokenType::Class),
+            'e' => self.check_keyword(1, 3, "lse".to_string(), TokenType::Else),
             'f' => {
                 if (self.current - self.start) > 1 {
                     let curr = self.source.chars().nth(self.start + 1).unwrap();
                     match curr {
-                        'a' => {
-                            return self.check_keyword(2, 3, "lse".to_string(), TokenType::False);
-                        },
-                        'o' => {
-                            return self.check_keyword(2, 1, "r".to_string(), TokenType::For);
-                        },
-                        'u' => {
-                            return self.check_keyword(2, 2, "nc".to_string(), TokenType::Func);
-                        },
+                        'a' => return self.check_keyword(2, 3, "lse".to_string(), TokenType::False),
+                        'o' => return self.check_keyword(2, 1, "r".to_string(), TokenType::For),
+                        'u' => return self.check_keyword(2, 2, "nc".to_string(), TokenType::Func),
                         _ => return TokenType::Identifier,
                     }
                 }
                 return TokenType::Identifier;
             },
-            'i' => {
-                return self.check_keyword(1, 1, "f".to_string(), TokenType::If);
-            },
-            'n' => {
-                return self.check_keyword(1, 3, "null".to_string(), TokenType::Null);
-            },
-            'p' => {
-                return self.check_keyword(1, 4, "rint".to_string(), TokenType::Print);
-            },
-            'r' => {
-                return self.check_keyword(1, 5, "eturn".to_string(), TokenType::Return);
-            },
-            's' => {
-                return self.check_keyword(1, 4, "uper".to_string(), TokenType::Super);
-            },
+            'i' => self.check_keyword(1, 1, "f".to_string(), TokenType::If),
+            'n' => self.check_keyword(1, 3, "null".to_string(), TokenType::Null),
+            'p' => self.check_keyword(1, 4, "rint".to_string(), TokenType::Print),
+            'r' => self.check_keyword(1, 5, "eturn".to_string(), TokenType::Return),
+            's' => self.check_keyword(1, 4, "uper".to_string(), TokenType::Super),
             't' => {
                 if (self.current - self.start) > 1 {
                     let curr = self.source.chars().nth(self.start + 1).unwrap();
                     match curr {
-                        'h' => {
-                            return self.check_keyword(2, 2, "is".to_string(), TokenType::This);
-                        },
-                        'r' => {
-                            return self.check_keyword(2, 2, "ue".to_string(), TokenType::True);
-                        },
+                        'h' => return self.check_keyword(2, 2, "is".to_string(), TokenType::This),
+                        'r' => return self.check_keyword(2, 2, "ue".to_string(), TokenType::True),
                         _ => return TokenType::Identifier,
                     }
                 }
                 return TokenType::Identifier;
             },
-            'v' => {
-                return self.check_keyword(1, 2, "ar".to_string(), TokenType::Var);
-            },
-            'w' => {
-                return self.check_keyword(1, 4, "hile".to_string(), TokenType::While);
-            },
+            'v' => self.check_keyword(1, 2, "ar".to_string(), TokenType::Var),
+            'w' => self.check_keyword(1, 4, "hile".to_string(), TokenType::While),
             _ => return TokenType::Identifier,
         }
     }
