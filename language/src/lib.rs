@@ -89,7 +89,7 @@ mod tests {
 
     /// Check if the for loop is tokenized correctly
     #[test]
-    fn tokenizer_for() {
+    fn tokenize_for() {
         const SOURCE: &str = "for (var i = 0; i < 4; i = i + 1) { print(1); }";
         const MAX_TOKENS: usize = 24;
         let mut tokens = Vec::<token::Token>::new();
@@ -127,6 +127,42 @@ mod tests {
             token::Token::new(TokenType::Print, "print".to_string(), 1i32),
             token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
             token::Token::new(TokenType::Number, "1".to_string(), 1i32),
+            token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
+            token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
+            token::Token::new(TokenType::CloseCurly, "}".to_string(), 1i32)
+        ];
+
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn tokenize_while() {
+        const SOURCE: &str = "while (true) { print(\"Hello, World!\"); }";
+        const MAX_TOKENS: usize = 11;
+
+        let mut tokens = Vec::<token::Token>::new();
+        let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+
+        loop {
+            let token = tokenizer.scan_token();
+            if token.t_type == TokenType::Eof {
+                break;
+            }
+
+            tokens.push(token.clone());
+        }
+
+        assert_eq!(tokens.len(), MAX_TOKENS);
+
+        let expected = vec![
+            token::Token::new(TokenType::While, "while".to_string(), 1i32),
+            token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
+            token::Token::new(TokenType::True, "true".to_string(), 1i32),
+            token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
+            token::Token::new(TokenType::OpenCurly, "{".to_string(), 1i32),
+            token::Token::new(TokenType::Print, "print".to_string(), 1i32),
+            token::Token::new(TokenType::OpenParen, "(".to_string(), 1i32),
+            token::Token::new(TokenType::String, "\"Hello, World!\"".to_string(), 1i32),
             token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
             token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
             token::Token::new(TokenType::CloseCurly, "}".to_string(), 1i32)
