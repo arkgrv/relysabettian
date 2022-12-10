@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::ops::Deref;
 use std::str::ParseBoolError;
 
 use language::common;
@@ -8,6 +9,7 @@ use crate::value::{Function, Class, Value, Chunk};
 
 /// Expresses precedence of different expressions
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(i32)]
 pub enum Precedence {
     None,
     Assignment, // =
@@ -20,6 +22,15 @@ pub enum Precedence {
     Unary,      // ! - +
     Call,       // . () []
     Primary,
+}
+
+impl Into<Precedence> for i32 {
+   fn into(self) -> Precedence {
+       let ret = unsafe {
+           std::mem::transmute::<i32, Precedence>(self)
+       };
+       ret
+   }
 }
 
 /// Describes types of function
@@ -35,11 +46,20 @@ pub enum FunctionType {
 type ParseFn = fn(bool) -> ();
 
 /// Describes a parsing rule
-#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct ParseRule {
-    pub prefix: fn(bool) -> (),
-    pub infix: fn(bool) -> (),
+    pub prefix: Option<fn(&mut CodeGenerator, bool) -> ()>,
+    pub infix: Option<fn(&mut CodeGenerator, bool) -> ()>,
     pub precedence: Precedence,
+}
+
+impl ParseRule {
+    pub fn new(prefix: Option<fn(&mut CodeGenerator, bool) -> ()>, infix: Option<fn(&mut CodeGenerator, bool) -> ()>, precedence: Precedence) -> ParseRule {
+        ParseRule {
+            prefix,
+            infix,
+            precedence
+        }
+    }
 }
 
 /// Inner implementation of a local value
@@ -80,37 +100,123 @@ impl Upvalue {
 
 /// Code generator generates bytecodes from parsed input source
 /// code
-#[derive(Clone, PartialEq, Debug)]
 pub struct CodeGenerator {
     default_function: Function,
-    parser: Option<Box<Parser>>,
     ftype: FunctionType,
     function: Function,
     enclosing: Option<Box<CodeGenerator>>,
     locals: Vec<Local>,
     upvalues: Vec<Upvalue>,
     scope_depth: i32,
+    previous: Token,
+    current: Token,
+    scanner: Tokenizer,
+    class_compiler: Option<Box<ClassCompiler>>,
+    had_error: bool,
+    panic_mode: bool,
+    rules: Vec<ParseRule>,
 }
 
 impl CodeGenerator {
-    pub fn new(parser: Option<Box<Parser>>, ftype: FunctionType, enclosing: Option<Box<CodeGenerator>>) -> CodeGenerator {
+    pub fn new(ftype: FunctionType, enclosing: Option<Box<CodeGenerator>>) -> CodeGenerator {
         let default_function = Function::new(0, "".to_string());
+
+        let grouping = 
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::grouping(code_gen, can_assign) };
+        let unary =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::unary(code_gen, can_assign) };
+        let binary =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::binary(code_gen, can_assign) };
+        let call =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::call(code_gen, can_assign) };
+        let dot =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::dot(code_gen, can_assign) };
+        let number =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::number(code_gen, can_assign) };
+        let string =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::string(code_gen, can_assign) };
+        let literal =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::literal(code_gen, can_assign) };
+        let variable =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::variable(code_gen, can_assign) };
+        let super_ =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::super_(code_gen, can_assign) };
+        let this =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::this(code_gen, can_assign) };
+        let and =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::and(code_gen, can_assign) };
+        let or =
+            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::or(code_gen, can_assign) };
+
+        let rules: Vec<ParseRule> = vec![
+            ParseRule::new(Some(Self::grouping), Some(Self::call), Precedence::Call), // Open paren
+            ParseRule::new(None, None, Precedence::None), // Close paren
+            ParseRule::new(None, None, Precedence::None), // Open curly
+            ParseRule::new(None, None, Precedence::None), // Close curly
+            ParseRule::new(None, None, Precedence::None), // Comma,
+            ParseRule::new(None, Some(Self::dot), Precedence::Call), // Dot
+            ParseRule::new(Some(Self::unary), Some(Self::binary), Precedence::Term), // Minus
+            ParseRule::new(Some(Self::unary), Some(Self::binary), Precedence::Term), // Plus
+            ParseRule::new(None, None, Precedence::None), // Semicolon
+            ParseRule::new(None, Some(Self::binary), Precedence::Factor), // Slash
+            ParseRule::new(None, Some(Self::binary), Precedence::Factor), // Star
+            ParseRule::new(Some(Self::binary), None, Precedence::None), // Excl
+            ParseRule::new(None, Some(Self::binary), Precedence::Equality), // ExclEqual
+            ParseRule::new(None, None, Precedence::None), // Equal,
+            ParseRule::new(None, Some(Self::binary), Precedence::Equality), // EqualEqual
+            ParseRule::new(None, Some(Self::binary), Precedence::Comparison), // Greater
+            ParseRule::new(None, Some(Self::binary), Precedence::Comparison), // GreaterEqual
+            ParseRule::new(None, Some(Self::binary), Precedence::Comparison), // Less
+            ParseRule::new(None, Some(Self::binary), Precedence::Comparison), // LessEqual
+            ParseRule::new(Some(Self::variable), None, Precedence::None), // Variable
+            ParseRule::new(Some(Self::string), None, Precedence::None), // String
+            ParseRule::new(Some(Self::number), None, Precedence::None), // Number
+            ParseRule::new(None, Some(Self::and), Precedence::And), // And
+            ParseRule::new(None, None, Precedence::None), // Class
+            ParseRule::new(None, None, Precedence::None), // Else
+            ParseRule::new(Some(Self::literal), None, Precedence::None), // False
+            ParseRule::new(None, None, Precedence::None), // Func
+            ParseRule::new(None, None, Precedence::None), // For
+            ParseRule::new(None, None, Precedence::None), // If
+            ParseRule::new(Some(Self::literal), None, Precedence::None), // Null
+            ParseRule::new(None, Some(Self::or), Precedence::Or), // Or
+            ParseRule::new(None, None, Precedence::None), // Print
+            ParseRule::new(None, None, Precedence::None), // Return
+            ParseRule::new(Some(Self::super_), None, Precedence::None), // Super
+            ParseRule::new(Some(Self::this), None, Precedence::None), // This
+            ParseRule::new(Some(Self::literal), None, Precedence::None), // True
+            ParseRule::new(None, None, Precedence::None), // Var
+            ParseRule::new(None, None, Precedence::None), // While
+            ParseRule::new(None, None, Precedence::None), // Error
+            ParseRule::new(None, None, Precedence::None), // Eof
+            ParseRule::new(None, Some(Self::binary), Precedence::Term), // BwAnd
+            ParseRule::new(None, Some(Self::binary), Precedence::Term), // BwOr
+            ParseRule::new(None, Some(Self::binary), Precedence::Term), // BwXor
+            ParseRule::new(Some(Self::unary), None, Precedence::Unary) // BwNot
+        ];
+
         let mut gen = CodeGenerator {
             default_function: default_function.clone(),
-            parser: parser.clone(),
             ftype,
             function: default_function.clone(),
             enclosing,
             locals: Vec::<Local>::new(),
             upvalues: Vec::<Upvalue>::new(),
             scope_depth: 0i32,
+            previous: Token::new(TokenType::Eof, "".to_string(), 0_i32),
+            current: Token::new(TokenType::Eof, "".to_string(), 0_i32),
+            scanner: Tokenizer::new("".to_string()),
+            class_compiler: None,
+            had_error: false,
+            panic_mode: false,
+            rules
         };
 
         let first_local_name = if ftype == FunctionType::Function { "".to_string() } else { "this".to_string() };
         let first_local = Function::new(0, first_local_name);
 
-        if ftype != FunctionType::Script && parser.is_some() {
-            gen.function.name = parser.unwrap().previous.text;
+        if ftype != FunctionType::Script {
+            gen.function.name = gen.previous.text.clone();
         }
 
         gen
@@ -119,7 +225,7 @@ impl CodeGenerator {
     /// Adds a new local value to the virtualized memory environment
     pub fn add_local(&mut self, name: String) {
         if self.locals.len() == common::UINT8_COUNT.into() {
-            self.parser.unwrap().error("Too many local variables in function");
+            self.error("Too many local variables in function");
             return;
         }
         self.locals.push(Local::new(name, -1));
@@ -136,7 +242,7 @@ impl CodeGenerator {
                 break;
             }
             if self.locals[i].name == name {
-                self.parser.unwrap().error("Variable identifier already declared in this scope.");
+                self.error("Variable identifier already declared in this scope.");
             }
         }
 
@@ -146,7 +252,8 @@ impl CodeGenerator {
     /// Marks a variable (or expression) initialized
     pub fn mark_initialized(&mut self) {
         if self.scope_depth == 0 { return; }
-        self.locals.last().unwrap().depth = self.scope_depth
+        let last = self.locals.len();
+        self.locals[last - 1].depth = self.scope_depth;
     }
 
     /// Resolves (finds) a local value
@@ -154,7 +261,7 @@ impl CodeGenerator {
         for i in self.locals.len() - 1..0 {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
-                    self.parser.unwrap().error("Cannot read local variable in its own initializer.");
+                    self.error("Cannot read local variable in its own initializer.");
                 }
 
                 return i as i32;
@@ -168,13 +275,13 @@ impl CodeGenerator {
     pub fn resolve_upvalue(&mut self, name: String) -> i32 {
         if self.enclosing.is_none() { return -1; }
         
-        let local = self.enclosing.unwrap().resolve_local(name);
+        let local = self.enclosing.as_mut().unwrap().resolve_local(name.clone());
         if local != -1 {
-            self.enclosing.unwrap().locals[local as usize].is_captured = true;
+            self.enclosing.as_mut().unwrap().locals[local as usize].is_captured = true;
             return self.add_upvalue(local as u8, true);
         }
 
-        let upvalue = self.enclosing.unwrap().resolve_upvalue(name);
+        let upvalue = self.enclosing.as_mut().unwrap().resolve_upvalue(name);
         if upvalue != -1 {
             return self.add_upvalue(upvalue as u8, false);
         }
@@ -191,7 +298,7 @@ impl CodeGenerator {
         }
 
         if self.upvalues.len() == common::UINT8_COUNT.into() {
-            self.parser.unwrap().error("Too many local variables in function.");
+            self.error("Too many local variables in function.");
             return 0;
         }
 
@@ -212,9 +319,9 @@ impl CodeGenerator {
 
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                self.parser.unwrap().emit_op(Opcode::CloseUpvalue);
+                self.emit_op(Opcode::CloseUpvalue);
             } else {
-                self.parser.unwrap().emit_op(Opcode::Pop);
+                self.emit_op(Opcode::Pop);
             }
 
             self.locals.pop();
@@ -225,62 +332,16 @@ impl CodeGenerator {
     pub fn is_local(&self) -> bool {
         self.scope_depth > 0
     }
-}
-
-/// Compiler for class types
-#[derive(Clone, PartialEq, Debug)]
-pub struct ClassCompiler {
-    enclosing: Option<Box<ClassCompiler>>,
-    has_superclass: bool,
-}
-
-impl ClassCompiler {
-    pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
-        ClassCompiler {
-            enclosing,
-            has_superclass: false,
-        }
-    }
-}
-
-/// Parses code into different statements and expressions
-#[derive(Clone, PartialEq, Debug)]
-pub struct Parser {
-    pub previous: Token,
-    pub current: Token,
-    pub scanner: Tokenizer,
-    pub generator: Box<CodeGenerator>,
-    pub class_compiler: Option<Box<ClassCompiler>>,
-
-    pub had_error: bool,
-    pub panic_mode: bool,
-}
-
-impl Parser {
-    pub fn new(source: String) -> Parser {
-        let mut p = Parser {
-            previous: Token::new(TokenType::Eof, "".to_string(), 0i32),
-            current: Token::new(TokenType::Eof, "".to_string(), 0i32),
-            scanner: Tokenizer::new(source.clone()),
-            generator: Box::new(CodeGenerator::new(None, FunctionType::Script, None)),
-            class_compiler: None,
-            had_error: false,
-            panic_mode: false,
-        };
-        
-        p.generator = Box::new(CodeGenerator::new(Some(Box::new(p)), FunctionType::Script, None));
-        p
-    }
 
     /// Advances parser checking for errors
     fn advance(&mut self) {
-        self.previous = self.current;
+        self.previous = self.current.clone();
 
         loop {
             self.current = self.scanner.scan_token();
             if self.current.t_type == TokenType::Error { break; }
 
-            self.error_at_current(self.current.text);
+            self.error_at_current(self.current.text.clone());
         }
     }
 
@@ -308,12 +369,14 @@ impl Parser {
 
     /// Emits byte
     fn emit_byte(&mut self, byte: u8) {
-        self.current_chunk().write_byte(byte, self.previous.line)
+        let line = self.previous.line;
+        self.current_chunk().write_byte(byte, line)
     }
 
     /// Emit operation (opcode)
     fn emit_op(&mut self, op: Opcode) {
-        self.current_chunk().write_opcode(op, self.previous.line)
+        let line = self.previous.line;
+        self.current_chunk().write_opcode(op, line)
     }
 
     /// Emit operation and specifics (opcode + byte)
@@ -351,7 +414,7 @@ impl Parser {
 
     /// Emit return instruction
     fn emit_return(&mut self) {
-        if self.generator.ftype == FunctionType::Initializer {
+        if self.ftype == FunctionType::Initializer {
             self.emit_op_byte(Opcode::GetLocal, 0);
         } else {
             self.emit_op(Opcode::Nop);
@@ -373,12 +436,13 @@ impl Parser {
 
     /// Emit constant
     fn emit_constant(&mut self, value: Value) {
-        self.emit_op_byte(Opcode::Constant, self.make_constant(value))
+        let value = self.make_constant(value);
+        self.emit_op_byte(Opcode::Constant, value)
     }
 
     /// Patch a jump for execution
     fn patch_jump(&mut self, offset: i32) {
-        let jump = self.current_chunk().count() - offset - 2;
+        let jump = self.current_chunk().count() - (offset as usize) - 2;
 
         if jump > u16::MAX.into() {
             self.error("Too much code to jump. Aborting");
@@ -391,97 +455,256 @@ impl Parser {
     /// Stops compilation
     fn end_compiler(&mut self) -> Function {
         self.emit_return();
-        self.generator.function
+        self.function.clone()
     }
 
     /// Binary expression
-    fn binary(&mut self, can_assign: bool) {
+    fn binary(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        let op_type = code_gen.previous.t_type;
+        let rule = Self::get_rule(code_gen, op_type);
+        let new_precedence = (rule.precedence as i32) + 1;
+        Self::parse_precedence(code_gen, new_precedence.into());
+
+        // Emit operator instruction
+        match op_type {
+            TokenType::ExclEqual => code_gen.emit_two_op(Opcode::Equal, Opcode::Not),
+            TokenType::EqualEqual => code_gen.emit_op(Opcode::Equal),
+            TokenType::Greater => code_gen.emit_op(Opcode::Greater),
+            TokenType::GreaterEqual => code_gen.emit_two_op(Opcode::Less, Opcode::Not),
+            TokenType::Less => code_gen.emit_op(Opcode::Less),
+            TokenType::LessEqual => code_gen.emit_two_op(Opcode::Greater, Opcode::Not),
+            TokenType::Plus => code_gen.emit_op(Opcode::Add),
+            TokenType::Minus => code_gen.emit_op(Opcode::Sub),
+            TokenType::Star => code_gen.emit_op(Opcode::Mul),
+            TokenType::Slash => code_gen.emit_op(Opcode::Div),
+            TokenType::BwOr => code_gen.emit_op(Opcode::BwOr),
+            TokenType::BwAnd => code_gen.emit_op(Opcode::BwAnd),
+            TokenType::BwXor => code_gen.emit_op(Opcode::BwXor),
+            _ => { return }
+        }
+    }
+
+    fn call(&mut self, _can_assign: bool) {
+        let arg_count = self.args_list();
+        self.emit_op_byte(Opcode::Call, arg_count)
+    }
+
+    fn dot(code_gen: &mut CodeGenerator, can_assign: bool) {
+        code_gen.consume(TokenType::Identifier, "Expected property name after '.'.");
+        let name = code_gen.identifier_constant(code_gen.previous.text.clone());
+        
+        if can_assign && code_gen.match_token(TokenType::Equal) {
+            code_gen.expression();
+            code_gen.emit_op_byte(Opcode::SetProperty, name as u8);
+        } else if code_gen.match_token(TokenType::OpenParen) {
+            let arg_count = code_gen.args_list();
+            code_gen.emit_op_byte(Opcode::Invoke, name as u8);
+            code_gen.emit_byte(arg_count);
+        } else {
+            code_gen.emit_op_byte(Opcode::GetProperty, name as u8);
+        }
+    }
+
+    fn literal(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        match code_gen.previous.t_type {
+            TokenType::False => code_gen.emit_op(Opcode::False),
+            TokenType::Null => code_gen.emit_op(Opcode::Nop),
+            TokenType::True => code_gen.emit_op(Opcode::True),
+            _ => { return; }
+        }
+    }
+
+    fn grouping(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        code_gen.expression();
+        code_gen.consume(TokenType::CloseParen, "Expected ')' after expression.")
+    }
+
+    fn number(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        let value = code_gen.previous.text.parse::<f64>().unwrap();
+        code_gen.emit_constant(Value::Double(value));
+    }
+
+    fn or(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        let else_jump = code_gen.emit_jump(Opcode::JmpNz);
+        let end_jump = code_gen.emit_jump(Opcode::Jmp);
+
+        code_gen.patch_jump(else_jump);
+        code_gen.emit_op(Opcode::Pop);
+
+        Self::parse_precedence(code_gen, Precedence::Or);
+        code_gen.patch_jump(end_jump);
+    }
+
+    fn string(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        let string_val: String = code_gen.previous.text.chars()
+            .skip(1)
+            .take(code_gen.previous.text.len() - 1)
+            .collect();
+        
+        code_gen.emit_constant(Value::String(string_val))
+    }
+
+    fn named_variable(code_gen: &mut CodeGenerator, name: String, can_assign: bool) {
+        let get_op: Opcode;
+        let set_op: Opcode;
+
+        let mut arg = code_gen.resolve_local(name.clone());
+        if arg != -1 {
+            get_op = Opcode::GetLocal;
+            set_op = Opcode::SetLocal;
+        } else {
+            arg = code_gen.resolve_upvalue(name.clone());
+            if arg != -1 {
+                get_op = Opcode::GetUpvalue;
+                set_op = Opcode::SetUpvalue;
+            } else {
+                arg = code_gen.identifier_constant(name);
+                get_op = Opcode::GetGlobal;
+                set_op = Opcode::SetGlobal;
+            }
+        }
+
+        if can_assign && code_gen.match_token(TokenType::Equal) {
+            code_gen.expression();
+            code_gen.emit_op_byte(set_op, arg as u8);
+        } else {
+            code_gen.emit_op_byte(get_op, arg as u8);
+        }
+    }
+
+    fn variable(code_gen: &mut CodeGenerator, can_assign: bool) {
+        Self::named_variable(code_gen, code_gen.previous.text.clone(), can_assign)
+    }
+
+    fn super_(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        if code_gen.class_compiler.is_none() {
+            code_gen.error("'super' cannot be used outside of a class.");
+        } else if !code_gen.class_compiler.as_mut().unwrap().has_superclass {
+            code_gen.error("'super' cannot be called in a class that is not inheriting.");
+        }
+
+        code_gen.consume(TokenType::Dot, "Expected '.' after 'super'.");
+        code_gen.consume(TokenType::Identifier, "Expected superclass member function name.");
+        let name = code_gen.identifier_constant(code_gen.previous.text.clone());
+
+        Self::named_variable(code_gen, "this".to_string(), false);
+        Self::named_variable(code_gen, "super".to_string(), false);
+        code_gen.emit_op_byte(Opcode::GetSuper, name as u8)
+    }
+
+    fn this(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        if code_gen.class_compiler.is_none() {
+            code_gen.error("'this' cannot be used outside of a class instance.");
+            return;
+        }
+
+        Self::variable(code_gen, false);
+    }
+
+    fn and(code_gen: &mut CodeGenerator, _can_assign: bool) {
+        let end_jump = code_gen.emit_jump(Opcode::JmpNz);
+
+        code_gen.emit_op(Opcode::Pop);
+        Self::parse_precedence(code_gen, Precedence::And);
+
+        code_gen.patch_jump(end_jump);
+    }
+
+    fn unary(&mut self, _can_assign: bool) {
         let op_type = self.previous.t_type;
-        let rule = self.get_rule(op_type);
+
+        match op_type {
+            TokenType::Excl => self.emit_op(Opcode::Not),
+            TokenType::Minus => self.emit_op(Opcode::Neg),
+            TokenType::BwNot => self.emit_op(Opcode::BwNot),
+            _ => { return; }
+        }
     }
 
-    fn call(&mut self, can_assign: bool) {
+    fn parse_precedence(code_gen: &mut CodeGenerator, precedence: Precedence) {
+        code_gen.advance();
+        let rule = Self::get_rule(code_gen, code_gen.previous.t_type);
 
+        if rule.prefix.is_none() {
+            code_gen.error("Expected expression.");
+            return;
+        }
+
+        let can_assign = precedence as i32 <= Precedence::Assignment as i32;
+        rule.prefix.as_mut().unwrap()(code_gen, can_assign);
+
+        while precedence as i32 <= Self::get_rule(code_gen, code_gen.current.t_type).precedence as i32 {
+            code_gen.advance();
+            let infix_rule = &mut Self::get_rule(code_gen, code_gen.previous.t_type).infix;
+            infix_rule.as_mut().unwrap()(code_gen, can_assign);
+        }
+
+        if can_assign && code_gen.match_token(TokenType::Equal) {
+            code_gen.error("Invalid assignment target.");
+            code_gen.expression();
+        }
     }
 
-    fn dot(&mut self, can_assign: bool) {
-
-    }
-
-    fn literal(&mut self, can_assign: bool) {
-
-    }
-
-    fn grouping(&mut self, can_assign: bool) {
-
-    }
-
-    fn number(&mut self, can_assign: bool) {
-
-    }
-
-    fn or(&mut self, can_assign: bool) {
-
-    }
-
-    fn string(&mut self, can_assign: bool) {
-
-    }
-
-    fn named_variable(&mut self, name: String, can_assign: bool) {
-
-    }
-
-    fn variable(&mut self, can_assign: bool) {
-
-    }
-
-    fn super_(&mut self, can_assign: bool) {
-
-    }
-
-    fn this(&mut self, can_assign: bool) {
-
-    }
-
-    fn and(&mut self, can_assign: bool) {
-
-    }
-
-    fn unary(&mut self, can_assign: bool) {
-
-    }
-
-    fn get_rule(&mut self, t_type: TokenType) -> &ParseRule {
-
+    fn get_rule(code_gen: &mut CodeGenerator, t_type: TokenType) -> &mut ParseRule {
+        &mut code_gen.rules[t_type as usize]
     }
 
     fn identifier_constant(&mut self, name: String) -> i32 {
-
+        self.make_constant(Value::String(name.clone())).into()
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u8 {
+        self.consume(TokenType::Identifier, error_message);
 
+        self.declare_variable(self.previous.text.clone());
+        if self.is_local() { return 0; }
+
+        self.identifier_constant(self.previous.text.clone()) as u8
     }
 
     fn define_variable(&mut self, global: u8) {
+        if self.is_local() {
+            self.mark_initialized();
+            return;
+        }
 
+        self.emit_op_byte(Opcode::DefineGlobal, global)
     }
 
     fn args_list(&mut self) -> u8 {
+        let mut arg_count = 0_u8;
 
+        if !self.check(TokenType::CloseParen) {
+            loop {
+                self.expression();
+                if arg_count == u8::MAX {
+                    self.error("A function cannot have more than 255 arguments.");
+                }
+
+                arg_count += 1;
+
+                if !self.match_token(TokenType::Comma) { break; }
+            }
+        }
+
+        self.consume(TokenType::CloseParen, "Expected ')' after arguments.");
+        arg_count
     }
 
     fn expression(&mut self) {
-
+        Self::parse_precedence(self, Precedence::Assignment);
     }
 
     fn block(&mut self) {
+        while !self.check(TokenType::CloseCurly) && !self.check(TokenType::Eof) {
+            self.declaration();
+        }
 
+        self.consume(TokenType::CloseCurly, "Expected '}' after block of instructions.");
     }
 
     fn function(&mut self, ftype: FunctionType) {
-
+        
     }
 
     fn member_func(&mut self) {
@@ -549,8 +772,23 @@ impl Parser {
     }
 
     /// Returns current memory chunk
-    pub fn current_chunk(&self) -> &Chunk {
-        &self.generator.function.chunk
+    pub fn current_chunk(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
     }
+}
 
+/// Compiler for class types
+#[derive(Clone, PartialEq, Debug)]
+pub struct ClassCompiler {
+    enclosing: Option<Box<ClassCompiler>>,
+    has_superclass: bool,
+}
+
+impl ClassCompiler {
+    pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
+        ClassCompiler {
+            enclosing,
+            has_superclass: false,
+        }
+    }
 }

@@ -13,6 +13,7 @@ pub enum Value {
     Function(Box<Function>),
     Bool(bool),
     Double(f64),
+    String(String),
 }
 
 /// Virtual Machine memory chunk
