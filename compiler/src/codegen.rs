@@ -1,9 +1,10 @@
+use std::any::Any;
 use std::str::ParseBoolError;
 
 use language::common;
 use language::{tokenizer::Tokenizer, token::Token, token::TokenType};
 use crate::opcodes::Opcode;
-use crate::value::{Function, Class, Value};
+use crate::value::{Function, Class, Value, Chunk};
 
 /// Expresses precedence of different expressions
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -249,84 +250,154 @@ pub struct Parser {
     pub current: Token,
     pub scanner: Tokenizer,
     pub generator: Box<CodeGenerator>,
-    pub class_compiler: Box<ClassCompiler>,
+    pub class_compiler: Option<Box<ClassCompiler>>,
 
     pub had_error: bool,
     pub panic_mode: bool,
 }
 
 impl Parser {
-    // pub fn new(source: String) -> Parser {
-    //     Parser {
-    //         previous: Token::new(TokenType::Eof, "".to_string(), 0i32),
-    //         current: Token::new(TokenType::Eof, "".to_string(), 0i32),
-    //         scanner: Tokenizer::new(source.clone()),
-    //         generator: 
-    //     }
-    // }
+    pub fn new(source: String) -> Parser {
+        let mut p = Parser {
+            previous: Token::new(TokenType::Eof, "".to_string(), 0i32),
+            current: Token::new(TokenType::Eof, "".to_string(), 0i32),
+            scanner: Tokenizer::new(source.clone()),
+            generator: Box::new(CodeGenerator::new(None, FunctionType::Script, None)),
+            class_compiler: None,
+            had_error: false,
+            panic_mode: false,
+        };
+        
+        p.generator = Box::new(CodeGenerator::new(Some(Box::new(p)), FunctionType::Script, None));
+        p
+    }
 
+    /// Advances parser checking for errors
     fn advance(&mut self) {
+        self.previous = self.current;
 
+        loop {
+            self.current = self.scanner.scan_token();
+            if self.current.t_type == TokenType::Error { break; }
+
+            self.error_at_current(self.current.text);
+        }
     }
 
+    /// Consumes a token with specified type
     fn consume(&mut self, t_type: TokenType, message: &str) {
+        if self.current.t_type == t_type {
+            self.advance();
+            return;
+        }
 
+        self.error_at_current(message.to_string());
     }
 
+    /// Check (compare) token types
     fn check(&mut self, t_type: TokenType) -> bool {
-
+        self.current.t_type == t_type
     }
 
+    /// Matches token
     fn match_token(&mut self, t_type: TokenType) -> bool {
-
+        if !self.check(t_type) { return false; }
+        self.advance();
+        true
     }
 
+    /// Emits byte
     fn emit_byte(&mut self, byte: u8) {
-
+        self.current_chunk().write_byte(byte, self.previous.line)
     }
 
+    /// Emit operation (opcode)
     fn emit_op(&mut self, op: Opcode) {
-
+        self.current_chunk().write_opcode(op, self.previous.line)
     }
 
+    /// Emit operation and specifics (opcode + byte)
     fn emit_op_byte(&mut self, op: Opcode, byte: u8) {
-
+        self.emit_op(op);
+        self.emit_byte(byte);
     }
 
+    /// Emit two operations
     fn emit_two_op(&mut self, op1: Opcode, op2: Opcode) {
-
+        self.emit_op(op1);
+        self.emit_op(op2);
     }
 
+    /// Emit a loop
     fn emit_loop(&mut self, start: i32) {
+        self.emit_op(Opcode::Loop);
 
+        let offset: i32 = self.current_chunk().count() as i32 - start + 2;
+        if offset > u16::MAX.into() {
+            self.error("Loop body too large.");
+        }
+
+        self.emit_byte(((offset >> 8u8) & 0xff) as u8);
+        self.emit_byte((offset & 0xff) as u8)
     }
 
+    /// Emit a jump
     fn emit_jump(&mut self, op: Opcode) -> i32 {
-
+        self.emit_op(op);
+        self.emit_byte(0xff_u8);
+        self.emit_byte(0xff_u8);
+        (self.current_chunk().count() - 2) as i32
     }
 
+    /// Emit return instruction
     fn emit_return(&mut self) {
+        if self.generator.ftype == FunctionType::Initializer {
+            self.emit_op_byte(Opcode::GetLocal, 0);
+        } else {
+            self.emit_op(Opcode::Nop);
+        }
 
+        self.emit_op(Opcode::Ret)
     }
 
+    /// Create a new constant
     fn make_constant(&mut self, value: Value) -> u8 {
+        let constant = self.current_chunk().add_constant(value);
+        if constant > u8::MAX.into() {
+            self.error("Too many constant in one chunk.");
+            return 0;
+        }
 
+        constant as u8
     }
 
+    /// Emit constant
     fn emit_constant(&mut self, value: Value) {
-
+        self.emit_op_byte(Opcode::Constant, self.make_constant(value))
     }
 
+    /// Patch a jump for execution
     fn patch_jump(&mut self, offset: i32) {
+        let jump = self.current_chunk().count() - offset - 2;
 
+        if jump > u16::MAX.into() {
+            self.error("Too much code to jump. Aborting");
+        }
+
+        self.current_chunk().code[offset as usize] = ((jump >> 8) & 0xff) as u8;
+        self.current_chunk().code[(offset + 1) as usize] = (jump & 0xff) as u8;
     }
 
+    /// Stops compilation
     fn end_compiler(&mut self) -> Function {
-
+        self.emit_return();
+        self.generator.function
     }
 
+    /// Binary expression
     fn binary(&mut self, can_assign: bool) {
-
+        let op_type = self.previous.t_type;
+        let rule = self.get_rule(op_type);
     }
 
     fn call(&mut self, can_assign: bool) {
@@ -475,6 +546,11 @@ impl Parser {
 
     fn error_at_current(&mut self, message: String) {
 
+    }
+
+    /// Returns current memory chunk
+    pub fn current_chunk(&self) -> &Chunk {
+        &self.generator.function.chunk
     }
 
 }

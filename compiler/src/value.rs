@@ -32,6 +32,11 @@ impl Chunk {
         }
     }
 
+    /// Returns number of data in chunk
+    pub fn count(&self) -> usize {
+        self.code.len()
+    }
+
     /// Writes a byte into VM memory
     pub fn write_byte(&mut self, byte: u8, line: i32) {
         self.code.push(byte);
