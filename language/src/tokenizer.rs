@@ -4,6 +4,7 @@ use super::token::{Token, TokenType};
 ///
 /// separates input source code into defined
 /// language tokens.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Tokenizer {
     pub source: String,
     pub start: usize,

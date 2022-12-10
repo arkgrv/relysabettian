@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::opcodes::Opcode;
 
 /// Variant type to store VM values
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Value {
     Null,
     Upvalue(Box<Upvalue>),
@@ -16,7 +16,7 @@ pub enum Value {
 }
 
 /// Virtual Machine memory chunk
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Chunk {
     pub code: Vec<u8>,
     pub consts: Vec<Value>,
@@ -183,7 +183,7 @@ fn byte_instruction(name: &str, chunk: &Chunk, offset: i32) -> i32 {
 }
 
 /// Representation of an Upvalue
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Upvalue {
     pub location: Box<Value>,
     pub closed: Value,
@@ -202,7 +202,7 @@ impl Upvalue {
 }
 
 /// VM class representation
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Class {
     pub name: String,
     pub memb_funcs: HashMap<String, Closure>,
@@ -219,7 +219,7 @@ impl Class {
 }
 
 /// VM Instance representation
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Instance {
     pub class: Class,
     pub fields: HashMap<String, Value>,
@@ -235,7 +235,7 @@ impl Instance {
 }
 
 /// VM Member function representation
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct MemberFunc {
     pub receiver: Instance,
     pub member_func: Closure,
@@ -251,7 +251,7 @@ impl MemberFunc {
 }
 
 /// VM Closure representation
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Closure {
    pub function: Function,
    upvalues: Vec<Upvalue>,
@@ -270,7 +270,7 @@ impl Closure {
 }
 
 /// VM Function representation
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Function {
     pub arity: usize,
     pub upvalue_count: usize,
