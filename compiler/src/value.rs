@@ -191,18 +191,18 @@ fn byte_instruction(name: &str, chunk: &Chunk, offset: i32) -> i32 {
 /// Representation of an Upvalue
 #[derive(Clone, PartialEq, Debug)]
 pub struct Upvalue {
-    pub location: Box<Value>,
+    pub location: *mut Value,
     pub closed: Value,
-    pub next: Option<Box<Value>>,
+    pub next: *mut Value,
 }
 
 impl Upvalue {
     /// Create a new Upvalue struct
-    pub fn new(slot: Box<Value>) -> Upvalue {
+    pub fn new(slot: *mut Value) -> Upvalue {
         Upvalue {
             location: slot,
             closed: Value::Null,
-            next: None,
+            next: std::ptr::null_mut(),
         }
     }
 }
