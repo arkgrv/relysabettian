@@ -1,4 +1,6 @@
 pub mod common;
+pub mod value;
+pub mod opcodes;
 pub mod parser;
 pub mod codegen;
 
