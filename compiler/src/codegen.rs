@@ -1,11 +1,7 @@
-use std::any::Any;
-use std::ops::Deref;
-use std::str::ParseBoolError;
-
 use language::common;
 use language::{tokenizer::Tokenizer, token::Token, token::TokenType};
 use crate::opcodes::Opcode;
-use crate::value::{Function, Class, Value, Chunk};
+use crate::value::{Function, Value, Chunk};
 
 /// Expresses precedence of different expressions
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -41,9 +37,6 @@ pub enum FunctionType {
     MemberFunction,
     Script,
 }
-
-/// Parser function type
-type ParseFn = fn(bool) -> ();
 
 /// Describes a parsing rule
 pub struct ParseRule {
@@ -101,7 +94,6 @@ impl Upvalue {
 /// Code generator generates bytecodes from parsed input source
 /// code
 pub struct CodeGenerator {
-    default_function: Function,
     ftype: FunctionType,
     function: Function,
     enclosing: Option<*mut CodeGenerator>,
@@ -111,7 +103,7 @@ pub struct CodeGenerator {
     previous: Token,
     current: Token,
     scanner: Tokenizer,
-    class_compiler: Option<Box<ClassCompiler>>,
+    class_compiler: Option<*mut ClassCompiler>,
     had_error: bool,
     panic_mode: bool,
     rules: Vec<ParseRule>,
@@ -168,7 +160,6 @@ impl CodeGenerator {
         ];
 
         let mut gen = CodeGenerator {
-            default_function: default_function.clone(),
             ftype,
             function: default_function.clone(),
             enclosing,
@@ -193,6 +184,19 @@ impl CodeGenerator {
         }
 
         gen
+    }
+
+    pub fn generate(&mut self) -> Option<Function> {
+        while !self.match_token(TokenType::Eof) {
+            self.declaration();
+        }
+
+        let function = self.end_compiler();
+        if self.had_error {
+            return None;
+        }
+
+        Some(function)
     }
 
     /// Adds a new local value to the virtualized memory environment
@@ -314,7 +318,7 @@ impl CodeGenerator {
             self.current = self.scanner.scan_token();
             if self.current.t_type == TokenType::Error { break; }
 
-            self.error_at_current(self.current.text.clone());
+            self.error_at_current(&self.current.text.clone());
         }
     }
 
@@ -325,7 +329,7 @@ impl CodeGenerator {
             return;
         }
 
-        self.error_at_current(message.to_string());
+        self.error_at_current(message);
     }
 
     /// Check (compare) token types
@@ -552,7 +556,7 @@ impl CodeGenerator {
     fn super_(code_gen: &mut CodeGenerator, _can_assign: bool) {
         if code_gen.class_compiler.is_none() {
             code_gen.error("'super' cannot be used outside of a class.");
-        } else if !code_gen.class_compiler.as_mut().unwrap().has_superclass {
+        } else if unsafe { !(*code_gen.class_compiler.unwrap()).has_superclass } {
             code_gen.error("'super' cannot be called in a class that is not inheriting.");
         }
 
@@ -688,7 +692,7 @@ impl CodeGenerator {
                 loop {
                     (*compiler).function.arity += 1;
                     if (*compiler).function.arity > u8::MAX.into() {
-                        self.error_at_current(format!("A function cannot have more than {} parameters.", u8::MAX));
+                        self.error_at_current(&format!("A function cannot have more than {} parameters.", u8::MAX));
                     }
 
                     let constant = Self::parse_variable(self, "Expected parameter name.");
@@ -705,7 +709,7 @@ impl CodeGenerator {
                 let function = self.end_compiler();
 
                 let new_compiler = compiler;
-                compiler = (*compiler).enclosing.unwrap();
+                (*compiler).enclosing.unwrap();
 
                 let constant = self.make_constant(Value::Function(Box::new(function)));
                 self.emit_op_byte(Opcode::Closure, constant);
@@ -719,67 +723,263 @@ impl CodeGenerator {
     }
 
     fn member_func(&mut self) {
-
+        self.consume(TokenType::Identifier, "Expected member function name.");
+        let constant = self.identifier_constant(self.previous.text.clone());
+        let ftype = if self.previous.text == "init".to_string() { FunctionType::Initializer } else { FunctionType::MemberFunction };
+        self.function(ftype);
+        self.emit_op_byte(Opcode::MembFunc, constant as u8);
     }
 
     fn class_declaration(&mut self) {
+        self.consume(TokenType::Identifier, "Expected class name.");
+        let class_name = self.previous.text.clone();
+        let name_constant = self.identifier_constant(class_name.clone());
+        self.declare_variable(self.previous.text.clone());
 
+        self.emit_op_byte(Opcode::Class, name_constant as u8);
+        self.define_variable(name_constant as u8);
+
+        let class_compiler = Box::new(self.class_compiler.unwrap());
+
+        if self.match_token(TokenType::Less) {
+            self.consume(TokenType::Identifier, "Expected superclass name.");
+            Self::variable(self, false);
+
+            if class_name == self.previous.text {
+                self.error("Class cannot inherit from itself.");
+            }
+
+            self.begin_scope();
+            self.add_local("super".to_string());
+            self.define_variable(0);
+
+            Self::named_variable(self, class_name, false);
+            self.consume(TokenType::OpenCurly, "Expected '{' before class body.");
+            while !self.check(TokenType::CloseCurly) && !self.check(TokenType::Eof) {
+                Self::member_func(self);
+            }
+            self.consume(TokenType::CloseCurly, "Expected '}' after class body.");
+            self.emit_op(Opcode::Pop);
+
+            if unsafe { (*(*class_compiler)).has_superclass } {
+                self.end_scope();
+            }
+
+            self.class_compiler = unsafe { (*self.class_compiler.unwrap()).enclosing };
+        }
     }
 
     fn func_declaration(&mut self) {
-
+        let global = self.parse_variable("Expected function name.");
+        self.mark_initialized();
+        self.function(FunctionType::Function);
+        self.define_variable(global)
     }
 
     fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expected variable name.");
 
+        if self.match_token(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit_op(Opcode::Nop);
+        }
+        self.consume(TokenType::Semicolon, "Expected ';' after variable declaration.");
+
+        self.define_variable(global)
     }
 
     fn expression_statement(&mut self) {
-
+        self.expression();
+        self.emit_op(Opcode::Pop);
+        self.consume(TokenType::Semicolon, "Expected ';' after expression.");
     }
 
     fn for_statement(&mut self) {
+        self.begin_scope();
 
+        self.consume(TokenType::OpenParen, "Expected '(' after 'for'.");
+        if self.match_token(TokenType::Var) {
+            self.var_declaration();
+        } else if self.match_token(TokenType::Semicolon) {
+            // Do absolutely nothing, but still check
+        } else {
+            self.expression_statement();
+        }
+
+        let mut loop_start = self.current_chunk().count();
+
+        let mut exit_jump = -1;
+        if !self.match_token(TokenType::Semicolon) {
+            self.expression();
+            self.consume(TokenType::Semicolon, "Expected ';' after loop condition.");
+
+            // Jump out of the loop if the condition becomes false
+            exit_jump = self.emit_jump(Opcode::JmpNz);
+            self.emit_op(Opcode::Pop);
+        }
+
+        if !self.match_token(TokenType::CloseParen) {
+            let body_jump = self.emit_jump(Opcode::Jmp);
+            let increment_start = self.current_chunk().count();
+
+            self.expression();
+            self.emit_op(Opcode::Pop);
+            self.consume(TokenType::CloseParen, "Expected ')' after for clauses.");
+
+            self.emit_loop(loop_start as i32);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+
+        self.emit_loop(loop_start as i32);
+
+        if exit_jump != -1 {
+            self.patch_jump(exit_jump);
+            self.emit_op(Opcode::Pop);
+        }
+
+        self.end_scope();
     }
 
     fn if_statement(&mut self) {
+        self.consume(TokenType::OpenParen, "Expected '(' after 'if'.");
+        self.expression();
+        self.consume(TokenType::CloseParen, "Expected ')' after condition.");
 
+        let then_jump = self.emit_jump(Opcode::JmpNz);
+        self.emit_op(Opcode::Pop);
+        self.statement();
+
+        let else_jump = self.emit_jump(Opcode::Jmp);
+
+        self.patch_jump(then_jump);
+        self.emit_op(Opcode::Pop);
+
+        if self.match_token(TokenType::Else) {
+            self.statement();
+        }
+
+        self.patch_jump(else_jump);
     }
 
     fn declaration(&mut self) {
+        if self.match_token(TokenType::Class) {
+            self.class_declaration();
+        } else if self.match_token(TokenType::Func) {
+            self.func_declaration();
+        } else if self.match_token(TokenType::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
 
+        if self.panic_mode { self.sync() }
     }
 
     fn statement(&mut self) {
-
+        if self.match_token(TokenType::Print) {
+            self.print_statement();
+        } else if self.match_token(TokenType::For) {
+            self.for_statement();
+        } else if self.match_token(TokenType::If) {
+            self.if_statement();
+        } else if self.match_token(TokenType::Return) {
+            self.return_statement();
+        } else if self.match_token(TokenType::While) {
+            self.while_statement();
+        } else if self.match_token(TokenType::OpenCurly) {
+            self.begin_scope();
+            self.block();
+            self.end_compiler();
+        } else {
+            self.expression_statement();
+        }
     }
     
     fn print_statement(&mut self) {
-
+        self.expression();
+        self.consume(TokenType::Semicolon, "Expected ';' after value.");
+        self.emit_op(Opcode::Print);
     }
 
     fn return_statement(&mut self) {
+        if self.ftype == FunctionType::Script {
+            self.error("Cannot return from main body.");
+        }
 
+        if self.match_token(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            if self.ftype == FunctionType::Initializer {
+                self.error("Cannot return a value from an initializer.");
+            }
+
+            self.expression();
+            self.consume(TokenType::Semicolon, "Expected ';' after reutrn value.");
+            self.emit_op(Opcode::Ret);
+        }
     }
 
     fn while_statement(&mut self) {
+        let loop_start = self.current_chunk().count();
 
+        self.consume(TokenType::OpenParen, "Expected '(' after 'while'.");
+        self.expression();
+        self.consume(TokenType::CloseParen, "Expected ')' after condition.");
+
+        let exit_jump = self.emit_jump(Opcode::JmpNz);
+
+        self.emit_op(Opcode::Pop);
+        self.statement();
+
+        self.emit_loop(loop_start as i32);
+
+        self.patch_jump(exit_jump);
+        self.emit_op(Opcode::Pop);
     }
 
     fn sync(&mut self) {
+        self.panic_mode = false;
 
+        while self.current.t_type != TokenType::Eof {
+            if self.previous.t_type == TokenType::Semicolon { return; }
+
+            match self.current.t_type {
+                TokenType::Class | TokenType::Func | TokenType::If | TokenType::While | TokenType::Print | TokenType::Return => { return; },
+                _ => ()
+            }
+
+            self.advance();
+        }
     }
 
-    fn error_at(&mut self, token: Token, message: String) {
+    fn error_at(&mut self, token: Token, message: &str) {
+        if self.panic_mode { return; }
 
+        self.panic_mode = true;
+
+        eprint!("[line {} ] Error", token.line);
+        if token.t_type == TokenType::Eof {
+            eprint!(" at end ");
+        } else if token.t_type == TokenType::Error {
+            ()
+        } else {
+            eprint!(" at '{}'", token.text.clone());
+        }
+
+        eprintln!(": {}", message);
+        self.had_error = true;
     }
 
     fn error(&mut self, message: &str) {
-
+        self.error_at(self.previous.clone(), message);
     }
 
-    fn error_at_current(&mut self, message: String) {
-
+    fn error_at_current(&mut self, message: &str) {
+        self.error_at(self.current.clone(), message);
     }
 
     /// Returns current memory chunk
@@ -791,12 +991,12 @@ impl CodeGenerator {
 /// Compiler for class types
 #[derive(Clone, PartialEq, Debug)]
 pub struct ClassCompiler {
-    enclosing: Option<Box<ClassCompiler>>,
+    enclosing: Option<*mut ClassCompiler>,
     has_superclass: bool,
 }
 
 impl ClassCompiler {
-    pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
+    pub fn new(enclosing: Option<*mut ClassCompiler>) -> ClassCompiler {
         ClassCompiler {
             enclosing,
             has_superclass: false,
