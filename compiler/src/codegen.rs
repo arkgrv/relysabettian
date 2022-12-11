@@ -104,7 +104,7 @@ pub struct CodeGenerator {
     default_function: Function,
     ftype: FunctionType,
     function: Function,
-    enclosing: Option<Box<CodeGenerator>>,
+    enclosing: Option<*mut CodeGenerator>,
     locals: Vec<Local>,
     upvalues: Vec<Upvalue>,
     scope_depth: i32,
@@ -118,36 +118,8 @@ pub struct CodeGenerator {
 }
 
 impl CodeGenerator {
-    pub fn new(ftype: FunctionType, enclosing: Option<Box<CodeGenerator>>) -> CodeGenerator {
+    pub fn new(ftype: FunctionType, enclosing: Option<*mut CodeGenerator>) -> CodeGenerator {
         let default_function = Function::new(0, "".to_string());
-
-        let grouping = 
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::grouping(code_gen, can_assign) };
-        let unary =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::unary(code_gen, can_assign) };
-        let binary =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::binary(code_gen, can_assign) };
-        let call =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::call(code_gen, can_assign) };
-        let dot =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::dot(code_gen, can_assign) };
-        let number =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::number(code_gen, can_assign) };
-        let string =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::string(code_gen, can_assign) };
-        let literal =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::literal(code_gen, can_assign) };
-        let variable =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::variable(code_gen, can_assign) };
-        let super_ =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::super_(code_gen, can_assign) };
-        let this =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::this(code_gen, can_assign) };
-        let and =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::and(code_gen, can_assign) };
-        let or =
-            |code_gen: &mut CodeGenerator, can_assign: bool| { Self::or(code_gen, can_assign) };
-
         let rules: Vec<ParseRule> = vec![
             ParseRule::new(Some(Self::grouping), Some(Self::call), Precedence::Call), // Open paren
             ParseRule::new(None, None, Precedence::None), // Close paren
@@ -213,7 +185,8 @@ impl CodeGenerator {
         };
 
         let first_local_name = if ftype == FunctionType::Function { "".to_string() } else { "this".to_string() };
-        let first_local = Function::new(0, first_local_name);
+        let first_local = Local::new(first_local_name, 0);
+        gen.locals.push(first_local);
 
         if ftype != FunctionType::Script {
             gen.function.name = gen.previous.text.clone();
@@ -275,13 +248,13 @@ impl CodeGenerator {
     pub fn resolve_upvalue(&mut self, name: String) -> i32 {
         if self.enclosing.is_none() { return -1; }
         
-        let local = self.enclosing.as_mut().unwrap().resolve_local(name.clone());
+        let local = unsafe { (*self.enclosing.unwrap()).resolve_local(name.clone()) };
         if local != -1 {
-            self.enclosing.as_mut().unwrap().locals[local as usize].is_captured = true;
+            unsafe { (*self.enclosing.unwrap()).locals[local as usize].is_captured = true };
             return self.add_upvalue(local as u8, true);
         }
 
-        let upvalue = self.enclosing.as_mut().unwrap().resolve_upvalue(name);
+        let upvalue = unsafe { (*self.enclosing.unwrap()).resolve_upvalue(name) };
         if upvalue != -1 {
             return self.add_upvalue(upvalue as u8, false);
         }
@@ -704,7 +677,45 @@ impl CodeGenerator {
     }
 
     fn function(&mut self, ftype: FunctionType) {
+        let mut compiler = CodeGenerator::new(ftype, Some(self));
+        let mut compiler: *mut CodeGenerator = &mut compiler;
         
+        unsafe {
+            (*compiler).begin_scope();
+
+            self.consume(TokenType::OpenParen, "Expected '(' after function name.");
+            if !self.check(TokenType::CloseParen) {
+                loop {
+                    (*compiler).function.arity += 1;
+                    if (*compiler).function.arity > u8::MAX.into() {
+                        self.error_at_current(format!("A function cannot have more than {} parameters.", u8::MAX));
+                    }
+
+                    let constant = Self::parse_variable(self, "Expected parameter name.");
+                    self.define_variable(constant);
+
+                    if !self.match_token(TokenType::Comma) { break; }
+                }
+
+                self.consume(TokenType::CloseParen, "Expected ')' after parameters.");
+                self.consume(TokenType::OpenCurly, "Expected '{' before function body.");
+
+                self.block();
+
+                let function = self.end_compiler();
+
+                let new_compiler = compiler;
+                compiler = (*compiler).enclosing.unwrap();
+
+                let constant = self.make_constant(Value::Function(Box::new(function)));
+                self.emit_op_byte(Opcode::Closure, constant);
+
+                for upvalue in &(*new_compiler).upvalues {
+                    self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+                    self.emit_byte(upvalue.index);
+                }
+            }
+        }
     }
 
     fn member_func(&mut self) {
