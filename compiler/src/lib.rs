@@ -1,4 +1,6 @@
 pub mod common;
+pub mod parser;
+pub mod codegen;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
