@@ -2,4 +2,5 @@
 members = [
 	"language",
 	"compiler",
+	"runtime"
 ]
