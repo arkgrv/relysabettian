@@ -1,3 +1,4 @@
+pub mod common;
 pub mod bytecode;
 pub mod value;
 
