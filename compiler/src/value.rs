@@ -284,7 +284,7 @@ impl OutputManager {
             ValueType::Func(func) => OutputManager::print_func(func),
             ValueType::NativeFunc(_) => print!("<native fn>"),
             ValueType::Closure(c) => OutputManager::print_func(&c.function),
-            ValueType::Upvalue(u) => print!("upvalue"),
+            ValueType::Upvalue(_) => print!("upvalue"),
             ValueType::Class(cl) => print!("{}", cl.name),
             ValueType::Instance(inst) => 
                 print!("{} instance", inst.class.name),
