@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Output};
+use std::collections::HashMap;
 use crate::bytecode::Instruction;
 
 /// Represents a value in the language.
