@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Output};
 use crate::bytecode::Instruction;
 
 /// Represents a value in the language.
@@ -266,5 +266,56 @@ impl ClosureObj {
         closure.upvalues.reserve(function.upvalue_count);
 
         closure
+    }
+}
+
+/// Stub struct for output management
+pub struct OutputManager;
+impl OutputManager {
+    /// Prints values by their type
+    /// ### Arguments
+    /// * `value`: ValueType to be printed
+    pub fn print_value(value: &ValueType) {
+        match value {
+            ValueType::Null => print!("null"),
+            ValueType::Number(n) => print!("{}", n),
+            ValueType::Bool(b) => print!("{}", b),
+            ValueType::String(str) => print!("{}", str),
+            ValueType::Func(func) => OutputManager::print_func(func),
+            ValueType::NativeFunc(_) => print!("<native fn>"),
+            ValueType::Closure(c) => OutputManager::print_func(&c.function),
+            ValueType::Upvalue(u) => print!("upvalue"),
+            ValueType::Class(cl) => print!("{}", cl.name),
+            ValueType::Instance(inst) => 
+                print!("{} instance", inst.class.name),
+            ValueType::BoundFunc(bf) => OutputManager::print_func(&bf.function.function),
+        }
+    }
+
+    /// Prints a function
+    /// ### Arguments
+    /// * `func`: reference to boxed function
+    fn print_func(func: &Box<FuncObj>) {
+        if func.get_name().is_empty() {
+            print!("<main>")
+        } else {
+            print!("<fn {}>", func.get_name())
+        }
+    }
+}
+
+/// Stub FalseVisitor struct for visitor implementation
+pub struct FalseVisitor;
+impl FalseVisitor {
+    /// Visits a value and returns its boolean 
+    /// correspondant
+    /// ### Arguments
+    /// * `value`: reference to ValueType
+    pub fn visit(value: &ValueType) -> bool {
+        match value {
+            ValueType::Bool(b) => !b,
+            ValueType::Null => true,
+            _ => false
+        }
     }
 }
