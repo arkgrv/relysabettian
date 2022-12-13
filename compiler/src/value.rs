@@ -204,7 +204,7 @@ impl BoundFuncObj {
 pub struct FuncObj {
     pub arity: usize,
     pub upvalue_count: usize,
-    name: String,
+    pub name: String,
     chunk: Chunk,
 }
 
@@ -220,11 +220,6 @@ impl FuncObj {
             name,
             chunk: Chunk::new(),
         }
-    }
-
-    /// Returns the name of this function
-    pub fn get_name(&self) -> &String {
-        &self.name
     }
 
     /// Returns the chunk associated to this function
@@ -296,10 +291,10 @@ impl OutputManager {
     /// ### Arguments
     /// * `func`: reference to boxed function
     fn print_func(func: &Box<FuncObj>) {
-        if func.get_name().is_empty() {
+        if func.name.is_empty() {
             print!("<main>")
         } else {
-            print!("<fn {}>", func.get_name())
+            print!("<fn {}>", func.name)
         }
     }
 }
