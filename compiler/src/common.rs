@@ -13,6 +13,8 @@ use crate::codegen::Parser;
 /// * `Unary` - precedence is given to unary operation
 /// * `Call` - precedence is given to call
 /// * `Primary` - primary expression has precedence
+#[derive(Clone, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum Precedence {
     None,
     Assignment,
@@ -27,10 +29,17 @@ pub enum Precedence {
     Primary,
 }
 
+impl Into<Precedence> for u8 {
+    fn into(self) -> Precedence {
+        unsafe { std::mem::transmute(self ) }
+    }
+}
+
 /// Parsing function definition
 pub type ParseFn = fn(&mut Parser, bool) -> ();
 
 /// Parsing rule definition
+#[derive(Clone)]
 pub struct ParseRule {
     pub prefix: Option<Box<ParseFn>>,
     pub infix: Option<Box<ParseFn>>,
