@@ -70,6 +70,14 @@ impl Chunk {
         &self.constants[constant]
     }
 
+    /// Adds a new constant to the chunk storage
+    /// ### Arguments
+    /// * `value`: value to add
+    pub fn add_constant(&mut self, value: Box<ValueType>) -> usize {
+        self.constants.push(value);
+        self.constants.len() - 1
+    }
+
     /// Writes a byte value into the chunk instruction
     /// memory
     /// ### Arguments
@@ -95,6 +103,11 @@ impl Chunk {
     /// * `instruction` - Instruction with corresponding line
     pub fn get_line(&self, instruction: usize) -> i32 {
         self.lines[instruction]
+    }
+
+    /// Returns number of instructions
+    pub fn count(&self) -> usize {
+        self.code.len()
     }
 }
 

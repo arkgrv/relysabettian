@@ -1,5 +1,5 @@
 use language::{token::{Token, TokenType}, tokenizer::Tokenizer};
-use crate::{common::{FunctionKind, Local, Upvalue}, value::{FuncObj, Chunk}, bytecode::Instruction};
+use crate::{common::{FunctionKind, Local, Upvalue}, value::{FuncObj, Chunk, ValueType}, bytecode::Instruction};
 
 #[derive(Clone)]
 pub struct Compiler {
@@ -232,14 +232,117 @@ impl Parser {
         self.current_chunk().write_byte(byte, line)
     }
 
+    /// Emits a new instruction in the instruction memory
+    /// ### Arguments
+    /// * `instruction`: instruction to write
     pub fn emit_instruction(&mut self, instruction: Instruction) {
         let line = self.previous.line;
         self.current_chunk().write_instr(instruction, line)
     }
 
+    /// Emits new instruction with data in the instruction memory
+    /// ### Arguments
+    /// * `instruction`: instruction to write
+    /// * `byte`: instruction data to write
+    pub fn emit_instruction_data(&mut self, instruction: Instruction, byte: u8) {
+        self.emit_instruction(instruction);
+        self.emit_byte(byte)
+    }
+
+    /// Emits two new instructions
+    /// ### Arguments
+    /// * `instr1`: first instruction to emit
+    /// * `instr2`: second instruction to emit
+    pub fn emit_two_instructions(&mut self, instr1: Instruction, instr2: Instruction) {
+        self.emit_instruction(instr1);
+        self.emit_instruction(instr2)
+    }
+
+    /// Emits a new loop instruction with relative start
+    /// ### Arguments
+    /// * `loop_start`: start of the loop
+    pub fn emit_loop(&mut self, loop_start: usize) {
+        self.emit_instruction(Instruction::Loop);
+
+        let offset = self.current_chunk().count() - loop_start + 2;
+        if offset > u16::MAX.into() {
+            self.error("Loop body too large.")
+        }
+
+        let first_byte = ((offset >> 8) & 0xff) as u8;
+        let second_byte = (offset &0xff) as u8;
+        self.emit_byte(first_byte);
+        self.emit_byte(second_byte)
+    }
+
+    /// Emits a new jump instruction
+    /// ### Arguments
+    /// * `instr`: jump instruction
+    pub fn emit_jump(&mut self, instr: Instruction) -> usize {
+        self.emit_instruction(instr);
+        self.emit_byte(0xff);
+        self.emit_byte(0xff);
+        self.current_chunk().count() - 2
+    }
+
+    /// Emits a return instruction
+    pub fn emit_return(&mut self) {
+        if self.compiler.as_mut().unwrap().func_type == FunctionKind::Initializer {
+            self.emit_instruction_data(Instruction::GetLoc, 0x00)
+        } else {
+            self.emit_instruction(Instruction::Nop)
+        }
+        self.emit_instruction(Instruction::Ret)
+    }
+
+    /// Emits a new constant
+    /// ### Arguments
+    /// * `value`: value of constant to emit
+    pub fn emit_constant(&mut self, value: Box<ValueType>) {
+        let constant = self.make_constant(value);
+        self.emit_instruction_data(Instruction::Const, constant)
+    }
+
+    /// Makes and adds a new constant to the memory
+    /// ### Arguments
+    /// * `value`: value of new constant
+    fn make_constant(&mut self, value: Box<ValueType>) -> u8 {
+        let constant = self.current_chunk().add_constant(value);
+        if constant > u8::MAX.into() {
+            self.error("Too many constants in one chunk.");
+            return 0
+        }
+
+        constant as u8
+    }
+
+    /// Patches a jump
+    /// ### Arguments
+    /// * `offset`: offset of jump data
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.current_chunk().count() - offset - 2;
+
+        if jump > u16::MAX.into() {
+            self.error("Too much code to jump over.");
+        }
+
+        let first_jump = ((jump >> 8) & 0xff) as u8;
+        let second_jump = (jump & 0xff) as u8;
+        self.current_chunk().set_code(offset, first_jump);
+        self.current_chunk().set_code(offset + 1, second_jump);
+    }
+
     /// Returns a reference to the current data chunk
     fn current_chunk(&mut self) -> &mut Chunk {
         &mut self.compiler.as_mut().unwrap().function.chunk
+    }
+
+    /// Ends the current compiler returning a function
+    pub fn end_compiler(&mut self) -> Box<FuncObj> {
+        self.emit_return();
+
+        let function = &self.compiler.as_ref().unwrap().function;
+        function.clone()
     }
 
     /// Throws an error
