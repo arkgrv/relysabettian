@@ -1,4 +1,4 @@
-use language::{token::Token, tokenizer::Tokenizer};
+use language::{token::{Token, TokenType}, tokenizer::Tokenizer};
 
 use crate::{common::{FunctionKind, Local, Upvalue}, value::FuncObj, bytecode::Instruction};
 
@@ -162,5 +162,57 @@ pub struct Parser {
 }
 
 impl Parser {
+    /// Creates a new Parser
+    /// ### Arguments
+    /// * `source`: source code to parse
+    pub fn new(source: String) -> Parser {
+        let mut parser = Parser {
+            previous: Token::new(TokenType::Eof, source.clone(), 0_i32),
+            current: Token::new(TokenType::Eof, source.clone(), 0_i32),
+            scanner: Tokenizer::new(source.clone()),
+            compiler: None,
+            class_compiler: None,
+            had_error: false,
+            panic_mode: false,
+        };
 
+        parser.compiler = Some(Box::new(Compiler::new(Some(Box::new(parser)), FunctionKind::Main, None)));
+        parser
+    }
+
+    /// Throws an error
+    /// ### Arguments
+    /// * `message`: error message  
+    pub fn error(&mut self, message: &str) {
+        self.error_at(&self.previous, message)
+    }
+
+    /// Throws an error located within current token
+    /// ### Arguments
+    /// * `message`: error message
+    pub fn error_at_current(&mut self, message: &str) {
+        self.error_at(&self.current, message)
+    }
+
+    /// Throws an error located at a specific token
+    /// ### Arguments
+    /// * `token`: reference to token where the error is located
+    /// * `message`: error message
+    pub fn error_at(&mut self, token: &Token, message: &str) {
+        if self.panic_mode { return };
+
+        self.panic_mode = true;
+
+        eprint!("[line {} ] Error", token.line);
+        if token.t_type == TokenType::Eof {
+            eprint!(" at end");
+        } else if token.t_type == TokenType::Error {
+            ()
+        } else {
+            eprint!(" at '{}'", token.text);
+        }
+
+        eprintln!(": {}", message);
+        self.had_error = true
+    }
 }
