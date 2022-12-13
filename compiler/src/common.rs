@@ -40,6 +40,7 @@ pub enum FunctionKind {
 }
 
 /// Local value representation
+#[derive(Clone)]
 pub struct Local {
     pub name: String,
     pub depth: i64,
@@ -61,6 +62,7 @@ impl Local {
 }
 
 /// Function upvalue representation
+#[derive(Clone)]
 pub struct Upvalue {
     pub index: u8,
     pub is_local: bool,

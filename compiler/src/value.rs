@@ -205,7 +205,7 @@ pub struct FuncObj {
     pub arity: usize,
     pub upvalue_count: usize,
     pub name: String,
-    chunk: Chunk,
+    pub chunk: Chunk,
 }
 
 impl FuncObj {

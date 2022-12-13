@@ -1,7 +1,7 @@
 use language::{token::{Token, TokenType}, tokenizer::Tokenizer};
+use crate::{common::{FunctionKind, Local, Upvalue}, value::{FuncObj, Chunk}, bytecode::Instruction};
 
-use crate::{common::{FunctionKind, Local, Upvalue}, value::FuncObj, bytecode::Instruction};
-
+#[derive(Clone)]
 pub struct Compiler {
     parser: Option<Box<Parser>>,
     func_type: FunctionKind,
@@ -46,7 +46,7 @@ impl Compiler {
     /// * `name`: name of local value
     pub fn add_local(&mut self, name: &String) {
         if self.locals.len() == language::common::UINT8_COUNT.into() {
-            self.parser.unwrap().error("Too many local variables in function.");
+            self.parser.as_mut().unwrap().error("Too many local variables in function.");
             return;
         }
 
@@ -64,11 +64,11 @@ impl Compiler {
     /// Resolves (finds) a local value
     /// ### Arguments
     /// * `name`: name of local value to find
-    pub fn resolve_local(&self, name: &String) -> i64 {
+    pub fn resolve_local(&mut self, name: &String) -> i64 {
         for i in self.locals.len() - 1..0 {
             if name.eq(&self.locals[i].name) {
                 if self.locals[i].depth == -1 {
-                    self.parser.unwrap().error("Cannot read local variable during initialization.");
+                    self.parser.as_mut().unwrap().error("Cannot read local variable during initialization.");
                 }
 
                 return i as i64;
@@ -81,16 +81,16 @@ impl Compiler {
     /// Resolves (finds) an upvalue
     /// ### Arguments
     /// * `name`: name of upvalue to find
-    pub fn resolve_upvalue(&self, name: &String) -> i64 {
+    pub fn resolve_upvalue(&mut self, name: &String) -> i64 {
         if self.enclosing.is_none() { return -1 };
 
-        let local = self.enclosing.unwrap().resolve_local(name);
+        let local = self.enclosing.as_mut().unwrap().resolve_local(name);
         if local != -1 {
-            self.enclosing.unwrap().locals[local as usize].is_captured = true;
+            self.enclosing.as_mut().unwrap().locals[local as usize].is_captured = true;
             self.add_upvalue(local as u8, true);
         }
 
-        let upvalue = self.enclosing.unwrap().resolve_upvalue(name);
+        let upvalue = self.enclosing.as_mut().unwrap().resolve_upvalue(name);
         if upvalue != -1 {
             self.add_upvalue(upvalue as u8, false);
         }
@@ -110,7 +110,7 @@ impl Compiler {
         }
 
         if self.upvalues.len() == language::common::UINT8_COUNT.into() {
-            self.parser.unwrap().error("Too many closure variables in this function.");
+            self.parser.as_mut().unwrap().error("Too many closure variables in this function.");
             0;
         }
 
@@ -132,9 +132,9 @@ impl Compiler {
 
         while !self.locals.is_empty() && !self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                self.parser.emit_instruction(Instruction::CloseUVal);
+                self.parser.as_mut().unwrap().emit_instruction(Instruction::CloseUVal);
             } else {
-                self.parser.emit_instruction(Instruction::Pop);
+                self.parser.as_mut().unwrap().emit_instruction(Instruction::Pop);
             }
             self.locals.pop();
         }
@@ -146,11 +146,13 @@ impl Compiler {
     }
 }
 
+#[derive(Clone)]
 pub struct ClassCompiler {
     enclosing: Option<Box<ClassCompiler>>,
     has_superclass: bool,
 }
 
+#[derive(Clone)]
 pub struct Parser {
     pub previous: Token,
     current: Token,
@@ -176,29 +178,89 @@ impl Parser {
             panic_mode: false,
         };
 
-        parser.compiler = Some(Box::new(Compiler::new(Some(Box::new(parser)), FunctionKind::Main, None)));
+        parser.compiler = Some(Box::new(Compiler::new(Some(Box::new(parser.clone())), FunctionKind::Main, None)));
         parser
+    }
+
+    /// Advances the parser
+    fn advance(&mut self) {
+        self.previous = self.current.clone();
+
+        loop {
+            self.current = self.scanner.scan_token();
+            if self.current.t_type == TokenType::Error { break };
+            
+            let message = self.current.text.clone();
+            self.error_at_current(&message);
+        }
+    }
+
+    /// Consumes current token
+    /// ### Arguments
+    /// * `t_type`: current token type
+    /// * `message`: error message if consuming fails
+    fn consume(&mut self, t_type: TokenType, message: &str) {
+        if self.current.t_type == t_type {
+            self.advance();
+            return
+        }
+
+        self.error_at_current(message)
+    }
+
+    /// Checks if the token has the same type as the current one
+    /// ### Arguments
+    /// * `t_type`: type of token to check
+    fn check_ttype(&self, t_type: TokenType) -> bool {
+        self.current.t_type == t_type
+    }
+
+    /// Matches current token and advances parser
+    /// ### Arguments
+    /// * `t_type`: type of token to match
+    fn match_ttype(&mut self, t_type: TokenType) -> bool {
+        if !self.check_ttype(t_type) { false; }
+        self.advance();
+        true
+    }
+
+    /// Emits a new byte in the instruction memory
+    /// ### Arguments
+    /// * `byte`: value of byte
+    pub fn emit_byte(&mut self, byte: u8) {
+        let line = self.previous.line;
+        self.current_chunk().write_byte(byte, line)
+    }
+
+    pub fn emit_instruction(&mut self, instruction: Instruction) {
+        let line = self.previous.line;
+        self.current_chunk().write_instr(instruction, line)
+    }
+
+    /// Returns a reference to the current data chunk
+    fn current_chunk(&mut self) -> &mut Chunk {
+        &mut self.compiler.as_mut().unwrap().function.chunk
     }
 
     /// Throws an error
     /// ### Arguments
     /// * `message`: error message  
     pub fn error(&mut self, message: &str) {
-        self.error_at(&self.previous, message)
+        self.error_at(self.previous.clone(), message)
     }
 
     /// Throws an error located within current token
     /// ### Arguments
     /// * `message`: error message
     pub fn error_at_current(&mut self, message: &str) {
-        self.error_at(&self.current, message)
+        self.error_at(self.current.clone(), message)
     }
 
     /// Throws an error located at a specific token
     /// ### Arguments
     /// * `token`: reference to token where the error is located
     /// * `message`: error message
-    pub fn error_at(&mut self, token: &Token, message: &str) {
+    pub fn error_at(&mut self, token: Token, message: &str) {
         if self.panic_mode { return };
 
         self.panic_mode = true;
