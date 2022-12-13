@@ -1,3 +1,5 @@
+use crate::codegen::Parser;
+
 /// Describes a Parser precedence assignment.
 /// Possible precedences are:
 /// * `None` - describes no parsing precedence
@@ -23,6 +25,27 @@ pub enum Precedence {
     Unary,
     Call,
     Primary,
+}
+
+/// Parsing function definition
+pub type ParseFn = fn(&mut Parser, bool) -> ();
+
+/// Parsing rule definition
+pub struct ParseRule {
+    pub prefix: Option<Box<ParseFn>>,
+    pub infix: Option<Box<ParseFn>>,
+    pub precedence: Precedence,
+}
+
+impl ParseRule {
+    /// Creates a new Parsing rule
+    /// ### Arguments
+    /// * `prefix`: prefix parsing function
+    /// * `infix`: infix parsing function
+    /// * `precedence`: precedence of rule
+    pub fn new(prefix: Option<Box<ParseFn>>, infix: Option<Box<ParseFn>>, precedence: Precedence) -> ParseRule {
+        ParseRule { prefix, infix, precedence }
+    }
 }
 
 /// Expresses the kind (type) of referred function

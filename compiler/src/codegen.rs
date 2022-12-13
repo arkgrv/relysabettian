@@ -1,5 +1,66 @@
 use language::{token::{Token, TokenType}, tokenizer::Tokenizer};
-use crate::{common::{FunctionKind, Local, Upvalue}, value::{FuncObj, Chunk, ValueType}, bytecode::Instruction};
+use crate::{common::{FunctionKind, Local, Upvalue, ParseRule, Precedence}, value::{FuncObj, Chunk, ValueType}, bytecode::Instruction};
+
+pub struct RulesContainer {
+    pub rules: Vec<Box<ParseRule>>,
+}
+
+impl RulesContainer {
+    pub fn new() -> RulesContainer {
+        RulesContainer {
+            rules: vec![
+                // Open Paren
+                Box::new(ParseRule::new(Some(Box::new(Parser::grouping)), Some(Box::new(Parser::call)), Precedence::Call)),
+                // Close Paren
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Open Curly
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Close Curly
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Comma
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Dot
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::dot)), Precedence::Call)),
+                // Minus
+                Box::new(ParseRule::new(Some(Box::new(Parser::unary)), Some(Box::new(Parser::binary)), Precedence::Term)),
+                // Plus
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Term)),
+                // Semicolon
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Slash
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Factor)),
+                // Star
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Factor)),
+                // Excl
+                Box::new(ParseRule::new(Some(Box::new(Parser::unary)), None, Precedence::None)),
+                // ExclEqual
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Equality)),
+                // Equal
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // EqualEqual
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Equality)),
+                // Greater
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Comparison)),
+                // GreaterEqual
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Comparison)),
+                // Less
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Comparison)),
+                // LessEqual
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Comparison)),
+                // Identifier
+                Box::new(ParseRule::new(Some(Box::new(Parser::variable)), None, Precedence::None)),
+                // String
+                Box::new(ParseRule::new(Some(Box::new(Parser::string)), None, Precedence::None)),
+                // Number
+                Box::new(ParseRule::new(Some(Box::new(Parser::number)), None, Precedence::None)),
+                // And
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::and)), Precedence::And)),
+                // Class
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+            ]
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Compiler {
@@ -343,6 +404,58 @@ impl Parser {
 
         let function = &self.compiler.as_ref().unwrap().function;
         function.clone()
+    }
+
+    fn grouping(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn unary(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn binary(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn call(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn dot(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn number(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn string(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn literal(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn variable(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn super_(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn this(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn and(parser: &mut Parser, _: bool) {
+
+    }
+
+    fn or(parser: &mut Parser, _: bool) {
+
     }
 
     /// Throws an error
