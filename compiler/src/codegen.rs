@@ -57,6 +57,46 @@ impl RulesContainer {
                 Box::new(ParseRule::new(None, Some(Box::new(Parser::and)), Precedence::And)),
                 // Class
                 Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Else
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // False
+                Box::new(ParseRule::new(Some(Box::new(Parser::literal)), None, Precedence::None)),
+                // Func
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // For
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // If
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Null
+                Box::new(ParseRule::new(Some(Box::new(Parser::literal)), None, Precedence::None)),
+                // Or
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::or)), Precedence::None)),
+                // Print
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Return
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Super
+                Box::new(ParseRule::new(Some(Box::new(Parser::super_)), None, Precedence::None)),
+                // This
+                Box::new(ParseRule::new(Some(Box::new(Parser::this)), None, Precedence::None)),
+                // True
+                Box::new(ParseRule::new(Some(Box::new(Parser::literal)), None, Precedence::None)),
+                // Var
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // While
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Error
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // Eof
+                Box::new(ParseRule::new(None, None, Precedence::None)),
+                // BwAnd
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Term)),
+                // BwOr
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Term)),
+                // BwXor
+                Box::new(ParseRule::new(None, Some(Box::new(Parser::binary)), Precedence::Term)),
+                // BwNot
+                Box::new(ParseRule::new(Some(Box::new(Parser::unary)), None, Precedence::Unary)),
             ]
         }
     }
