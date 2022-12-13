@@ -31,6 +31,7 @@ pub enum Precedence {
 /// * `Initializer`- class initializer
 /// * `Bound` - class bound function (method)
 /// * `Main` - top-level caller code
+#[derive(PartialEq)]
 pub enum FunctionKind {
     Function,
     Initializer,
@@ -50,11 +51,11 @@ impl Local {
     /// ### Arguments
     /// * `name` - name of local value
     /// * `is_captured` - status of local value
-    pub fn new(name: String, depth: i64, is_captured: bool) -> Local {
+    pub fn new(name: String, depth: i64) -> Local {
         Local {
             name,
             depth,
-            is_captured,
+            is_captured: false,
         }
     }
 }
