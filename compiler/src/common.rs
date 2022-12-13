@@ -31,7 +31,7 @@ pub enum Precedence {
 /// * `Initializer`- class initializer
 /// * `Bound` - class bound function (method)
 /// * `Main` - top-level caller code
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum FunctionKind {
     Function,
     Initializer,

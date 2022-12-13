@@ -68,7 +68,7 @@ pub enum Instruction {
     /// Closure
     Clo,
     /// Close upvalue
-    CloseBVal,
+    CloseUVal,
     /// Return
     Ret,
     /// Class definition

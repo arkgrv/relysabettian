@@ -1,6 +1,7 @@
 pub mod common;
 pub mod bytecode;
 pub mod value;
+pub mod codegen;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
