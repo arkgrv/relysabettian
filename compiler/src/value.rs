@@ -113,7 +113,7 @@ impl Chunk {
 
 /// Describes a native function, which is a language function
 /// that is directly bound with a VM function
-type NativeFunc = fn(usize, Vec::<Box<ValueType>>) -> ValueType;
+type NativeFunc = fn(usize, Vec<Box<ValueType>>) -> ValueType;
 
 /// Effective language representation of a native
 /// function

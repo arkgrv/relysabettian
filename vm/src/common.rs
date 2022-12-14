@@ -1,6 +1,6 @@
-use compiler::value::{ClosureObj, ValueType, NativeFuncObj};
+use compiler::value::{ClosureObj, ValueType, NativeFuncObj, FalseVisitor, InstanceObj};
 
-use crate::runtime::{VirtualMachine, STACK_MAX};
+use crate::runtime::{VirtualMachine, STACK_MAX, INIT_STRING};
 
 /// Describes the result of interpretation phase
 /// ### Possible values:
@@ -24,19 +24,34 @@ pub struct CallFrame {
     pub stack_offset: usize,
 }
 
-/// Describes an implementation of a function call
-/// visitor
-pub struct CallVisitor {
-    pub arg_count: usize,
-    pub virtual_machine: Box<VirtualMachine>,
+impl CallFrame {
+    /// Creates a new CallFrame
+    /// ### Arguments
+    /// * `closure`: closure
+    /// * `ip`: instruction pointer value
+    /// * `stack_offset`: offset on stack
+    pub fn new(closure: Box<ClosureObj>, ip: usize, stack_offset: usize) -> CallFrame {
+        CallFrame {
+            closure,
+            ip,
+            stack_offset,
+        }
+    }
 }
 
-impl CallVisitor {
+/// Describes an implementation of a function call
+/// visitor
+pub struct CallVisitor<'a> {
+    pub arg_count: usize,
+    pub virtual_machine: Box<&'a mut VirtualMachine>,
+}
+
+impl <'a> CallVisitor<'a> {
     /// Creates a new CallVisitor
     /// ### Arguments
     /// * `arg_count`: number of arguments
     /// * `virtual_machine`: virtual machine related to this visitor
-    pub fn new(arg_count: usize, virtual_machine: Box<VirtualMachine>) -> CallVisitor {
+    pub fn new(arg_count: usize, virtual_machine: Box<&'a mut VirtualMachine>) -> CallVisitor<'a> {
         CallVisitor {
             arg_count,
             virtual_machine,
@@ -67,5 +82,38 @@ impl CallVisitor {
         self.virtual_machine.stack.reserve(STACK_MAX);
 
         true
+    }
+
+    /// Visit a closure value
+    /// ### Arguments
+    /// * `value`: closure value
+    fn visit_closure(&mut self, value: Box<ValueType>, arg_count: usize) -> bool {
+        match *value {
+            ValueType::Closure(c) => self.virtual_machine.call(c, arg_count),
+            _ => false
+        }
+    }
+
+    /// Visit a class value
+    /// ### Arguments
+    /// * `value`: class value
+    fn visit_class_value(&mut self, value: Box<ValueType>) -> bool {
+        match *value {
+            ValueType::Class(cl) => {
+                let offset = self.virtual_machine.stack.len() - self.arg_count - 1;
+                let value = Box::new(ValueType::Instance(Box::new(InstanceObj::new(cl.clone()))));
+                self.virtual_machine.stack[offset] = value;
+
+                let found = cl.methods.get(INIT_STRING);
+                if found.is_none() {
+                    self.virtual_machine.runtime_error(format!("Expected 0 arguments but got {}.", self.arg_count));
+                    return false
+                }
+
+                let callable = Box::new(*found.unwrap().clone());
+                return self.virtual_machine.call(callable, self.arg_count);
+            },
+            _ => false
+        }
     }
 }
