@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use compiler::value::{ValueType, UpvalueObj, NativeFuncObj, InstanceObj, ClassObj, ClosureObj, BoundFuncObj};
+use compiler::{value::{ValueType, UpvalueObj, NativeFuncObj, InstanceObj, ClassObj, ClosureObj, BoundFuncObj}, codegen::Parser};
 
-use crate::common::{CallFrame, CallVisitor};
+use crate::common::{CallFrame, CallVisitor, InterpretResult};
 
 /// Maximum number of stack frames
 pub const FRAMES_MAX: usize = 64_usize;
@@ -31,6 +31,22 @@ impl VirtualMachine {
         }
     }
 
+    pub fn interpret(&mut self, source: String) -> InterpretResult {
+        let mut parser = Parser::new(source);
+        let opt = parser.compile();
+        if opt.is_none() {
+            return InterpretResult::CompilationError;
+        }
+
+        let function = opt.unwrap();
+        let closure = Box::new(ClosureObj::new(function));
+
+        self.push(Box::new(ValueType::Closure(closure)));
+        self.call(closure, 0);
+
+        self.run();
+    }
+
     /// Resets the Virtual machine stack
     fn reset_stack(&mut self) {
         self.stack.clear();
@@ -43,7 +59,7 @@ impl VirtualMachine {
     /// ### Arguments
     /// * `callee`: object to be called
     /// * `arg_count`: number of arguments
-    pub fn call_value(&mut self, callee: Box<ValueType>, arg_count: usize) -> bool {
+    fn call_value(&mut self, callee: Box<ValueType>, arg_count: usize) -> bool {
         let vm = Box::new(self);
         let mut visitor = CallVisitor::new(arg_count, vm);
         return visitor.visit(callee);
@@ -53,7 +69,7 @@ impl VirtualMachine {
     /// ### Arguments
     /// * `name`: name of instance
     /// * `arg_count`: number of arguments
-    pub fn invoke(&mut self, name: String, arg_count: usize) -> bool {
+    fn invoke(&mut self, name: String, arg_count: usize) -> bool {
         let instance_val = self.peek(arg_count);
         let instance = ValueUtils::get_instance(instance_val);
 
@@ -76,7 +92,7 @@ impl VirtualMachine {
         self.call_value(value.clone(), arg_count)
     }
 
-    pub fn invoke_from_class(&mut self, class_value: Box<ClassObj>, name: String, arg_count: usize) -> bool {
+    fn invoke_from_class(&mut self, class_value: Box<ClassObj>, name: String, arg_count: usize) -> bool {
         let found = class_value.methods.get(&name);
         if found.is_none() {
             self.runtime_error(format!("Undefined property '{}'.", name));
@@ -160,6 +176,70 @@ impl VirtualMachine {
 
     }
 
+    /// Defines a new bound function
+    /// ### Arguments
+    /// * `name`: name of new bound function
+    fn define_bound_func(&mut self, name: String) {
+        let func_value = self.peek(0);
+        let value = ValueUtils::get_closure(func_value);
+        let class_value = self.peek(1);
+        let class = ValueUtils::get_class(class_value);
+
+        if value.is_none() {
+            self.runtime_error(format!("Bound functions are valid only for instances."));
+            return;
+        }
+
+        if class.is_none() {
+            self.runtime_error(format!("Bound functions are valid only for instances."));
+            return;
+        }
+
+        class.unwrap().methods.insert(name.clone(), value.unwrap());
+        self.pop();
+    }
+
+    /// Captures a list of upvalues
+    /// ### Arguments
+    /// * `local`: local value to capture
+    fn capture_upvalue(&mut self, local: Box<ValueType>) -> Box<UpvalueObj> {
+        let mut prev_upvalue: Option<Box<UpvalueObj>> = None;
+        let mut upvalue = self.open_upvalues.clone();
+
+        while upvalue.is_some() && upvalue.as_ref().unwrap().location != local {
+            prev_upvalue = upvalue.clone();
+            upvalue = upvalue.unwrap().next;
+        }
+
+        if upvalue.is_some() && upvalue.as_ref().unwrap().location == local {
+            return upvalue.unwrap().clone();
+        }
+
+        let mut new_upvalue = upvalue.clone().unwrap();
+        new_upvalue.next = upvalue;
+
+        if prev_upvalue.is_none() {
+            self.open_upvalues = Some(new_upvalue.clone());
+        } else {
+            prev_upvalue.unwrap().next = Some(new_upvalue.clone());
+        }
+
+        new_upvalue.clone()
+    }
+
+    /// Closes all upvalues
+    /// ### Arguments
+    /// * `last`: last upvalue in the list
+    fn close_upvalues(&mut self, last: Box<ValueType>) {
+        while self.open_upvalues.is_some() && self.open_upvalues.as_ref().unwrap().location != last {
+            let upvalue = &mut self.open_upvalues;
+            upvalue.as_mut().unwrap().closed = upvalue.as_mut().unwrap().location.clone();
+            upvalue.as_mut().unwrap().location = upvalue.as_mut().unwrap().closed.clone();
+            self.open_upvalues = upvalue.as_mut().unwrap().next.clone();
+
+        }
+    }
+
     /// Pushes a new value to the VM stack
     /// ### Arguments
     /// * `value`: value to push
@@ -181,6 +261,31 @@ impl VirtualMachine {
         let offset = self.stack.len() - 1 - distance;
         self.stack[offset].clone()
     }
+
+    fn run(&mut self) -> InterpretResult {
+
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        let offset = self.frames.last().unwrap().ip + 1;
+        self.frames.last().unwrap().ip += 1;
+        self.frames.last().unwrap().closure.function.get_code(offset)
+    }
+
+    fn read_const(&mut self) -> Box<ValueType> {
+        let constant = self.read_byte();
+        Box::new(*self.frames.last().unwrap().closure.function.get_const(constant.into()))
+    }
+
+    fn read_short(&mut self) -> u16 {
+        self.frames.last().unwrap().ip += 2;
+        let offset = 
+            (self.frames.last().unwrap().ip - 2) << 8 |
+            (self.frames.last().unwrap().closure.function.get_code(
+                (self.frames.last().unwrap().ip - 1).into()
+            ));
+        let value = self.frames.last().unwrap().closure.function.get_code(offset)
+    }
 }
 
 pub struct ValueUtils;
@@ -192,6 +297,33 @@ impl ValueUtils {
     pub fn get_instance(value: Box<ValueType>) -> Option<Box<InstanceObj>> {
         match *value {
             ValueType::Instance(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Converts a value type to a bound function
+    /// ### Arguments
+    /// * `value`: value to convert
+    fn get_bound_func(value: Box<ValueType>) -> Option<Box<BoundFuncObj>> {
+        match *value {
+            ValueType::BoundFunc(bf) => Some(bf),
+            _ => None,
+        }
+    }
+
+    /// Converts a value type to a class object
+    /// ### Arguments
+    /// * `value`: value to convert
+    fn get_class(value: Box<ValueType>) -> Option<Box<ClassObj>> {
+        match *value {
+            ValueType::Class(cl) => Some(cl),
+            _ => None,
+        }
+    }
+
+    fn get_closure(value: Box<ValueType>) -> Option<Box<ClosureObj>> {
+        match *value {
+            ValueType::Closure(cl) => Some(cl),
             _ => None,
         }
     }

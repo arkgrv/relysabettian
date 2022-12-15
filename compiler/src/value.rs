@@ -29,6 +29,24 @@ pub enum ValueType {
     BoundFunc(Box<BoundFuncObj>),
 }
 
+impl PartialEq for ValueType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Number(l0), Self::Number(r0)) => l0 == r0,
+            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::Func(l0), Self::Func(r0)) => l0 == r0,
+            (Self::NativeFunc(l0), Self::NativeFunc(r0)) => l0 == r0,
+            (Self::Closure(l0), Self::Closure(r0)) => l0 == r0,
+            (Self::Upvalue(l0), Self::Upvalue(r0)) => l0 == r0,
+            (Self::Class(l0), Self::Class(r0)) => l0 == r0,
+            (Self::Instance(l0), Self::Instance(r0)) => l0 == r0,
+            (Self::BoundFunc(l0), Self::BoundFunc(r0)) => l0 == r0,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
 /// Represents a chunk of code (instruction + data)
 /// of a given block of code in the language
 #[derive(Clone)]
@@ -111,6 +129,13 @@ impl Chunk {
     }
 }
 
+impl PartialEq for Chunk {
+    /// Implements equality for Chunk
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code && self.constants == other.constants && self.lines == other.lines
+    }
+}
+
 /// Describes a native function, which is a language function
 /// that is directly bound with a VM function
 type NativeFunc = fn(usize, Vec<Box<ValueType>>) -> ValueType;
@@ -128,6 +153,13 @@ impl NativeFuncObj {
     /// * `function` - A fn(usize, Vec\<ValueType\>) -> ValueType
     pub fn new(function: Box<NativeFunc>) -> NativeFuncObj {
         NativeFuncObj { function }
+    }
+}
+
+impl PartialEq for NativeFuncObj {
+    /// Implements equality check for NativeFunctionObj
+    fn eq(&self, other: &Self) -> bool {
+        self.function == other.function
     }
 }
 
@@ -154,6 +186,13 @@ impl UpvalueObj {
     }
 }
 
+impl PartialEq for UpvalueObj {
+    /// Implements equality check for upvalue type
+    fn eq(&self, other: &Self) -> bool {
+        self.location == other.location && self.closed == other.closed && self.next == other.next
+    }
+}
+
 /// Language class object
 #[derive(Clone)]
 pub struct ClassObj {
@@ -170,6 +209,13 @@ impl ClassObj {
             name,
             methods: HashMap::<String, Box<ClosureObj>>::new()
         }
+    }
+}
+
+impl PartialEq for ClassObj {
+    /// Implements equality for ClassObj
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.methods == other.methods
     }
 }
 
@@ -192,6 +238,13 @@ impl InstanceObj {
     }
 }
 
+impl PartialEq for InstanceObj {
+    /// Implements equality for InstanceObj
+    fn eq(&self, other: &Self) -> bool {
+        self.class == other.class && self.fields == other.fields
+    }
+}
+
 /// Bound function (method) language object
 #[derive(Clone)]
 pub struct BoundFuncObj {
@@ -209,6 +262,13 @@ impl BoundFuncObj {
             receiver,
             function,
         }
+    }
+}
+
+impl PartialEq for BoundFuncObj {
+    /// Implements equality for BoundFuncObj
+    fn eq(&self, other: &Self) -> bool {
+        self.receiver == other.receiver && self.function == other.function
     }
 }
 
@@ -255,6 +315,13 @@ impl FuncObj {
     }
 }
 
+impl PartialEq for FuncObj {
+    /// Implements equality for FuncObj
+    fn eq(&self, other: &Self) -> bool {
+        self.arity == other.arity && self.upvalue_count == other.upvalue_count && self.name == other.name && self.chunk == other.chunk
+    }
+}
+
 /// Language closure object
 #[derive(Clone)]
 pub struct ClosureObj {
@@ -274,6 +341,13 @@ impl ClosureObj {
         closure.upvalues.reserve(function.upvalue_count);
 
         closure
+    }
+}
+
+impl PartialEq for ClosureObj {
+    /// Implements equality for ClosureObj
+    fn eq(&self, other: &Self) -> bool {
+        self.function == other.function && self.upvalues == other.upvalues
     }
 }
 
