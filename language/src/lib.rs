@@ -4,7 +4,7 @@ pub mod common;
 
 #[cfg(test)]
 mod tests {
-    use crate::token::TokenType;
+    use crate::token::{TokenType, Token};
 
     use super::*;
 
@@ -166,6 +166,38 @@ mod tests {
             token::Token::new(TokenType::CloseParen, ")".to_string(), 1i32),
             token::Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
             token::Token::new(TokenType::CloseCurly, "}".to_string(), 1i32)
+        ];
+
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn tokenize_boolean_expr() {
+        const SOURCE: &str = "var x = true || false;";
+        const MAX_TOKENS: usize = 7;
+
+        let mut tokens = Vec::<token::Token>::new();
+        let mut tokenizer = tokenizer::Tokenizer::new(SOURCE.to_string());
+
+        loop {
+            let token = tokenizer.scan_token();
+            if token.t_type == TokenType::Eof {
+                break;
+            }
+
+            tokens.push(token.clone());
+        }
+
+        assert_eq!(tokens.len(), MAX_TOKENS);
+
+        let expected = vec![
+            Token::new(TokenType::Var, "var".to_string(), 1i32),
+            Token::new(TokenType::Identifier, "x".to_string(), 1i32),
+            Token::new(TokenType::Equal, "=".to_string(), 1i32),
+            Token::new(TokenType::True, "true".to_string(), 1i32),
+            Token::new(TokenType::PipePipe, "||".to_string(), 1i32),
+            Token::new(TokenType::False, "false".to_string(), 1i32),
+            Token::new(TokenType::Semicolon, ";".to_string(), 1i32),
         ];
 
         assert_eq!(tokens, expected);
