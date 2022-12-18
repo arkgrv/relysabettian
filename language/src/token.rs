@@ -7,30 +7,27 @@ pub enum TokenType {
     OpenCurly, CloseCurly,
     Comma, Dot, Minus, Plus,
     Semicolon, Slash, Star,
+    Caret, Tilde,
 
     // Dual (or single) character tokens
     Excl, ExclEqual,
     Equal, EqualEqual,
     Greater, GreaterEqual,
     Less, LessEqual,
+    Ampersand, Pipe,
+    AmpersandAmpersand, PipePipe,
 
     // Identifiers and types
     Identifier, String, Number,
 
     // Language keywords
-    And, Class, Else, False,
-    Func, For, If, Null, Or,
+    Class, Else, False,
+    Func, For, If, Null,
     Print, Return, Super, This,
     True, Var, While,
 
     // Errors and constants
     Error, Eof,
-
-    // Bitwise operations
-    BwAnd, BwOr, BwXor, BwNot,
-
-    // Future array syntax
-    OpenSquare, CloseSquare,
 }
 
 /// Represents a single language token

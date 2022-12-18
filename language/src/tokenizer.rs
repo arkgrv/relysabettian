@@ -54,13 +54,18 @@ impl Tokenizer {
             '+' => self.make_token(TokenType::Plus),
             '/' => self.make_token(TokenType::Slash),
             '*' => self.make_token(TokenType::Star),
-            '^' => self.make_token(TokenType::BwXor),
+            '^' => self.make_token(TokenType::Caret),
+            '~' => self.make_token(TokenType::Tilde),
             '&' => {
-                let t_type = if self.match_char('&') { TokenType::And } else { TokenType::BwAnd };
+                let t_type = if self.match_char('&')
+                                        { TokenType::AmpersandAmpersand } 
+                                        else { TokenType::Ampersand };
                 self.make_token(t_type)
             },
             '|' => {
-                let t_type = if self.match_char('|') { TokenType::Or } else { TokenType::BwOr };
+                let t_type = if self.match_char('|')
+                                        { TokenType::PipePipe }
+                                        else { TokenType::Pipe };
                 self.make_token(t_type)
             },
             '!' => {
