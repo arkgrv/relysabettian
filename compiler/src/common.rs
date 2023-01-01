@@ -4,7 +4,7 @@ use crate::parser::Parser;
 
 /// Describes the different modes of parsing
 /// precedence.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 #[repr(i32)]
 pub enum Precedence {
     None,
