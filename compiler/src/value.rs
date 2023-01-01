@@ -1,12 +1,12 @@
-use std::rc::Rc;
+use std::{rc::Rc, collections::HashMap};
 
-use crate::instruction::{self, Opcode};
+use crate::instruction::Opcode;
 
 /// Represents any valid value in the language's
 /// runtime environment.
 #[derive(Clone)]
 pub enum Value {
-
+    Null,
 }
 
 /// This structure holds a chunk of memory which is
@@ -78,8 +78,9 @@ impl Chunk {
     /// 
     /// Parameters:
     /// * `value`: new value to add
-    pub fn add_constant(&mut self, value: &Value) {
-
+    pub fn add_constant(&mut self, value: &Value) -> usize {
+        self.constants.push(value.clone());
+        self.constants.len() - 1
     }
 
     /// Gets the line related to this instruction
@@ -94,5 +95,145 @@ impl Chunk {
     /// in current chunk.
     pub fn count(&self) -> usize {
         self.code.len()
+    }
+}
+
+/// Native function type alias
+type NativeFn = fn(usize, Rc<Vec<Value>>);
+
+/// Represents a native (runtime environment related)
+/// function.
+pub struct NativeFunction {
+    pub function: NativeFn,
+}
+
+/// Represents an upvalue in the language
+pub struct Upvalue {
+    pub location: *mut Value,
+    pub closed: Value,
+    pub next: Option<Rc<Value>>,
+}
+
+impl Upvalue {
+    /// Constructs a new Upvalue
+    /// 
+    /// Parameters:
+    /// * `slot`: pointer to the value's location
+    pub fn new(slot: *mut Value) -> Upvalue {
+        Upvalue {
+            location: slot,
+            closed: Value::Null,
+            next: None,
+        }
+    }
+}
+
+/// Represents a class in the language
+pub struct Class {
+    pub name: String,
+    pub methods: HashMap<String, Closure>,
+}
+
+impl Class {
+    /// Constructs a new Class
+    /// 
+    /// Parameters:
+    /// * `name`: name of the class
+    pub fn new(name: String) -> Class {
+        Class {
+            name,
+            methods: HashMap::new(),
+        }
+    }
+}
+
+/// Represents an instance of a class
+pub struct Instance {
+    pub class: Rc<Class>,
+    pub fields: HashMap<String, Value>,
+}
+
+impl Instance {
+    /// Constructs a new Instance
+    /// 
+    /// Parameters:
+    /// * `class`: instantiated class
+    pub fn new(class: Rc<Class>) -> Instance {
+        Instance {
+            class: class.clone(),
+            fields: HashMap::new(),
+        }
+    }
+}
+
+/// Represents a class' method
+pub struct Method {
+    pub receiver: Rc<Instance>,
+    pub method: Rc<Closure>,
+}
+
+impl Method {
+    /// Constructs a new class method
+    /// 
+    /// Parameters:
+    /// * `receiver`: instance bound to this method
+    /// * `method`: closure related to this method
+    pub fn new(receiver: Rc<Instance>, method: Rc<Closure>) -> Method {
+        Method {
+            receiver: receiver.clone(),
+            method: method.clone(),
+        }
+    }
+}
+
+/// Represents a function in the language
+pub struct Function {
+    pub arity: usize,
+    pub upvalue_count: usize,
+    pub name: String,
+    pub chunk: Chunk,
+}
+
+impl Function {
+    /// Constructs a new function
+    /// 
+    /// Parameters:
+    /// * `arity`: number of arguments
+    /// * `name`: name of the function 
+    pub fn new(arity: usize, name: String) -> Function {
+        Function {
+            arity,
+            upvalue_count: 0,
+            name: name.clone(),
+            chunk: Chunk::new(),
+        }
+    }
+}
+
+impl PartialEq for Function {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+/// Represents a function closure
+pub struct Closure {
+    pub function: Rc<Function>,
+    pub upvalues: Vec<Option<Rc<Upvalue>>>,
+}
+
+impl Closure {
+    /// Constructs a new Closure
+    /// 
+    /// Parameters:
+    /// * `function`: function bound to this closure
+    pub fn new(function: Rc<Function>) -> Closure {
+        let mut cl = Closure {
+            function: function.clone(),
+            upvalues: Vec::new(),
+        };
+
+        cl.upvalues.resize(function.upvalue_count, None);
+        cl
     }
 }
