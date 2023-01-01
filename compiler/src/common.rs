@@ -1,8 +1,11 @@
+use std::ops::Add;
+
 use crate::parser::Parser;
 
 /// Describes the different modes of parsing
 /// precedence.
 #[derive(Copy, Clone)]
+#[repr(i32)]
 pub enum Precedence {
     None,
     Assignment,
@@ -15,6 +18,38 @@ pub enum Precedence {
     Unary,
     Call,
     Primary,
+}
+
+impl Into<Precedence> for i32 {
+    /// Converts an i32 into a Precedence enum
+    fn into(self) -> Precedence {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl Into<i32> for Precedence {
+    /// Converts a Precedence enum into an i32
+    fn into(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Adds addition support to the Precedence enum
+impl Add for Precedence {
+    fn add(self, rhs: Self) -> Self::Output {
+        (self as i32 + rhs as i32).into()
+    }
+
+    type Output = Precedence;
+}
+
+/// Adds addition support to the Precedence enum
+impl Add<i32> for Precedence {
+    fn add(self, rhs: i32) -> Self::Output {
+        (self as i32 + rhs).into()
+    }
+
+    type Output = Precedence;
 }
 
 /// Describes the types of functions allowed in this language
