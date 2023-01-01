@@ -11,7 +11,7 @@ use crate::{
 pub struct Compiler {
     pub parser: Rc<RefCell<Parser>>,
     pub f_type: FunctionType,
-    pub function: Rc<Function>,
+    pub function: Rc<RefCell<Function>>,
     pub enclosing: Option<Box<Compiler>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
@@ -33,7 +33,7 @@ impl Compiler {
         let mut compiler = Compiler {
             parser,
             f_type,
-            function: Rc::new(Function::new(0, "".to_string())),
+            function: Rc::new(RefCell::new(Function::new(0, "".to_string()))),
             enclosing,
             locals: Vec::new(),
             upvalues: Vec::new(),
@@ -166,7 +166,7 @@ impl Compiler {
 
         self.upvalues.push(InternalUpvalue::new(index, is_local));
         let upvalue_count = self.upvalues.len();
-        self.function.upvalue_count = upvalue_count;
+        (*self.function).borrow_mut().upvalue_count = upvalue_count;
 
         Some(upvalue_count - 1)
     }
