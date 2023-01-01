@@ -10,7 +10,7 @@ pub const UINT8_COUNT: u16 = u8::MAX as u16 + 1;
 #[derive(Clone)]
 pub enum Value {
     Null,
-    String(Rc<String>),
+    String(String),
     Double(f64),
     Bool(bool),
     Function(Rc<Function>),
