@@ -1,16 +1,17 @@
-use rc_box::RcBox;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     common::{FunctionType, InternalUpvalue, Local},
+    instruction::Opcode,
     parser::Parser,
-    value::{Function, UINT8_COUNT}, instruction::Opcode,
+    value::{Function, UINT8_COUNT},
 };
 
 /// Implementation of a simple statements compiler
 pub struct Compiler {
-    pub parser: RcBox<Parser>,
+    pub parser: Rc<RefCell<Parser>>,
     pub f_type: FunctionType,
-    pub function: RcBox<Function>,
+    pub function: Rc<Function>,
     pub enclosing: Option<Box<Compiler>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
@@ -25,14 +26,14 @@ impl Compiler {
     /// * `f_type`: type of the function undergoing compilation
     /// * `enclosing`: enclosing (internal scope) compiler
     pub fn new(
-        parser: RcBox<Parser>,
+        parser: Rc<RefCell<Parser>>,
         f_type: FunctionType,
         enclosing: Option<Box<Compiler>>,
     ) -> Compiler {
         let mut compiler = Compiler {
             parser,
             f_type,
-            function: RcBox::new(Function::new(0, "".to_string())),
+            function: Rc::new(Function::new(0, "".to_string())),
             enclosing,
             locals: Vec::new(),
             upvalues: Vec::new(),
@@ -56,12 +57,14 @@ impl Compiler {
     }
 
     /// Adds a new local value
-    /// 
+    ///
     /// Parameters:
     /// * `name`: new local value name
     pub fn add_local(&mut self, name: String) {
         if self.locals.len() == UINT8_COUNT.into() {
-            self.parser.error("Functions do not allow more than 255 local variables.");
+            self.parser
+                .borrow_mut()
+                .error("Functions do not allow more than 255 local variables.");
             return;
         }
 
@@ -82,7 +85,9 @@ impl Compiler {
                 break;
             }
             if self.locals[i].name == name {
-                self.parser.error("Variable already declared in this scope.");
+                self.parser
+                    .borrow_mut()
+                    .error("Variable already declared in this scope.");
             }
         }
 
@@ -105,7 +110,9 @@ impl Compiler {
         for i in (0..=self.locals.len()).rev() {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
-                    self.parser.error("Cannot read local variable when inside initializer.");
+                    self.parser
+                        .borrow_mut()
+                        .error("Cannot read local variable when inside initializer.");
                 }
 
                 return Some(i);
@@ -139,7 +146,7 @@ impl Compiler {
     }
 
     /// Adds a new upvalue
-    /// 
+    ///
     /// Parameters:
     /// * `index`: memory location of upvalue
     /// * `is_local`: locality of upvalue
@@ -151,7 +158,9 @@ impl Compiler {
         }
 
         if self.upvalues.len() == UINT8_COUNT.into() {
-            self.parser.error("Limits of closure variables exceeded! Max amount of closure variables is 255.");
+            self.parser.borrow_mut().error(
+                "Limits of closure variables exceeded! Max amount of closure variables is 255.",
+            );
             return None;
         }
 
@@ -172,9 +181,9 @@ impl Compiler {
         self.scope_depth -= 1;
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                self.parser.emit_instr(Opcode::CloseUpvalue);
+                self.parser.borrow_mut().emit_instr(Opcode::CloseUpvalue);
             } else {
-                self.parser.emit_instr(Opcode::Pop);
+                self.parser.borrow_mut().emit_instr(Opcode::Pop);
             }
 
             self.locals.pop();
@@ -195,7 +204,7 @@ pub struct ClassCompiler {
 
 impl ClassCompiler {
     /// Constructs a new ClassCompiler
-    /// 
+    ///
     /// Parameters:
     /// * `enclosing`: enclosing class compiler
     pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
