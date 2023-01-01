@@ -192,3 +192,22 @@ impl Compiler {
         self.scope_depth > 0
     }
 }
+
+/// Compiler for classes
+pub struct ClassCompiler {
+    pub enclosing: Option<Box<ClassCompiler>>,
+    pub has_superclass: bool,
+}
+
+impl ClassCompiler {
+    /// Constructs a new ClassCompiler
+    /// 
+    /// Parameters:
+    /// * `enclosing`: enclosing class compiler
+    pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
+        ClassCompiler {
+            enclosing,
+            has_superclass: false,
+        }
+    }
+}
