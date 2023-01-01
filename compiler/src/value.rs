@@ -286,3 +286,22 @@ impl OutputVisitor for Value {
         }
     }
 }
+
+/// Visits a value checking its falsiness.
+pub trait FalseVisitor {
+    /// Visits the current value
+    fn visit_false(&self) -> bool;
+}
+
+/// Implementation of FalseVisitor for boolean values
+impl FalseVisitor for bool {
+    fn visit_false(&self) -> bool {
+        !*self
+    }
+}
+
+impl FalseVisitor for Value {
+    fn visit_false(&self) -> bool {
+        matches!(self, Value::Null)
+    }
+}
