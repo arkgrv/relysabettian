@@ -7,10 +7,21 @@ use crate::instruction::Opcode;
 #[derive(Clone)]
 pub enum Value {
     Null,
+    String(Rc<String>),
+    Double(f64),
+    Bool(bool),
+    Function(Rc<Function>),
+    NativeFunction(Rc<NativeFunction>),
+    Closure(Rc<Closure>),
+    Upvalue(Rc<Upvalue>),
+    Class(Rc<Class>),
+    Instance(Rc<Instance>),
+    Method(Rc<Method>),
 }
 
 /// This structure holds a chunk of memory which is
 /// directly related with a specific piece of code.
+#[derive(Clone)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
@@ -103,11 +114,13 @@ type NativeFn = fn(usize, Rc<Vec<Value>>);
 
 /// Represents a native (runtime environment related)
 /// function.
+#[derive(Clone)]
 pub struct NativeFunction {
     pub function: NativeFn,
 }
 
 /// Represents an upvalue in the language
+#[derive(Clone)]
 pub struct Upvalue {
     pub location: *mut Value,
     pub closed: Value,
@@ -129,6 +142,7 @@ impl Upvalue {
 }
 
 /// Represents a class in the language
+#[derive(Clone)]
 pub struct Class {
     pub name: String,
     pub methods: HashMap<String, Closure>,
@@ -148,6 +162,7 @@ impl Class {
 }
 
 /// Represents an instance of a class
+#[derive(Clone)]
 pub struct Instance {
     pub class: Rc<Class>,
     pub fields: HashMap<String, Value>,
@@ -167,6 +182,7 @@ impl Instance {
 }
 
 /// Represents a class' method
+#[derive(Clone)]
 pub struct Method {
     pub receiver: Rc<Instance>,
     pub method: Rc<Closure>,
@@ -187,6 +203,7 @@ impl Method {
 }
 
 /// Represents a function in the language
+#[derive(Clone)]
 pub struct Function {
     pub arity: usize,
     pub upvalue_count: usize,
@@ -217,6 +234,7 @@ impl PartialEq for Function {
 }
 
 /// Represents a function closure
+#[derive(Clone)]
 pub struct Closure {
     pub function: Rc<Function>,
     pub upvalues: Vec<Option<Rc<Upvalue>>>,
@@ -235,5 +253,36 @@ impl Closure {
 
         cl.upvalues.resize(function.upvalue_count, None);
         cl
+    }
+}
+
+/// Visits a value printing on standard output
+pub trait OutputVisitor {
+    /// Visits the current value
+    fn visit(&self);
+}
+
+/// Implementation of OutputVisitor for Value types
+impl OutputVisitor for Value {
+    fn visit(&self) {
+        match self {
+            Value::Null => print!("null"),
+            Value::Double(d) => print!("{}", d),
+            Value::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
+            Value::String(s) => print!("{}", s),
+            Value::Function(f) => {
+                if f.name.is_empty() {
+                    print!("<main>");
+                } else {
+                    print!("<fn {}>", f.name);
+                }
+            },
+            Value::NativeFunction(_) => print!("<native fn>"),
+            Value::Closure(c) => Value::Function(c.function.clone()).visit(),
+            Value::Upvalue(_) => print!("upvalue"),
+            Value::Instance(i) => print!("{} instance", i.class.name),
+            Value::Method(m) => Value::Function(m.method.function.clone()).visit(),
+            _ => panic!("Unknown value!")
+        }
     }
 }
