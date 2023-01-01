@@ -1,4 +1,3 @@
-
 /// Describes a single language token type
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum TokenType {
@@ -28,6 +27,20 @@ pub enum TokenType {
 
     // Errors and constants
     Error, Eof,
+}
+
+impl Into<u8> for TokenType {
+    /// Converts a TokenType into an 8
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+impl Into<usize> for TokenType {
+    /// Converts a TokenType into a usize
+    fn into(self) -> usize {
+        self as usize
+    }
 }
 
 /// Represents a single language token
