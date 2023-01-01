@@ -37,6 +37,22 @@ pub struct ParseRule {
     pub precedence: Precedence,
 }
 
+impl ParseRule {
+    /// Constructs a new Parse Rule
+    /// 
+    /// Parameters:
+    /// * `prefix`: prefix parsing function
+    /// * `infix`: infix parsing function
+    /// * `precedence`: precedence of parsing
+    pub fn new(prefix: Rc<ParseFn>, infix: Rc<ParseFn>, precedence: Precedence) -> ParseRule {
+        ParseRule {
+            prefix: Rc::clone(&prefix),
+            infix: Rc::clone(&infix),
+            precedence
+        }
+    }
+}
+
 /// Implementation of a local variable reference
 #[derive(Clone)]
 pub struct Local {
