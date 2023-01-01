@@ -18,7 +18,7 @@ pub enum Precedence {
 }
 
 /// Describes the types of functions allowed in this language
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum FunctionType {
     Function,
     Initializer,
