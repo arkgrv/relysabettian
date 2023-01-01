@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::parser::Parser;
 
 /// Describes the different modes of parsing
@@ -34,8 +32,8 @@ pub type ParseFn = fn(&mut Parser, bool);
 /// Implementation of a basic parsing rule
 #[derive(Clone)]
 pub struct ParseRule {
-    pub prefix: Rc<ParseFn>,
-    pub infix: Rc<ParseFn>,
+    pub prefix: ParseFn,
+    pub infix: ParseFn,
     pub precedence: Precedence,
 }
 
@@ -46,10 +44,10 @@ impl ParseRule {
     /// * `prefix`: prefix parsing function
     /// * `infix`: infix parsing function
     /// * `precedence`: precedence of parsing
-    pub fn new(prefix: Rc<ParseFn>, infix: Rc<ParseFn>, precedence: Precedence) -> ParseRule {
+    pub fn new(prefix: ParseFn, infix: ParseFn, precedence: Precedence) -> ParseRule {
         ParseRule {
-            prefix: Rc::clone(&prefix),
-            infix: Rc::clone(&infix),
+            prefix,
+            infix,
             precedence
         }
     }
