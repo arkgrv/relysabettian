@@ -17,6 +17,15 @@ pub enum Precedence {
     Primary,
 }
 
+/// Describes the types of functions allowed in this language
+#[derive(Copy, Clone)]
+pub enum FunctionType {
+    Function,
+    Initializer,
+    Method,
+    Main,
+}
+
 /// Parsing function type
 pub type ParseFn = fn(bool);
 
