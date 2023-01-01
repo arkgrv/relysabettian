@@ -1,4 +1,4 @@
-use std::{rc::Rc, collections::HashMap};
+use std::{rc::Rc, collections::HashMap, cell::RefCell};
 
 use crate::instruction::Opcode;
 
@@ -211,7 +211,7 @@ pub struct Function {
     pub arity: usize,
     pub upvalue_count: usize,
     pub name: String,
-    pub chunk: Chunk,
+    pub chunk: Rc<RefCell<Chunk>>,
 }
 
 impl Function {
@@ -225,7 +225,7 @@ impl Function {
             arity,
             upvalue_count: 0,
             name: name.clone(),
-            chunk: Chunk::new(),
+            chunk: Rc::new(RefCell::new(Chunk::new())),
         }
     }
 }
