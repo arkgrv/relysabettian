@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use rc_box::RcBox;
 
 use crate::{
     common::{FunctionType, InternalUpvalue, Local},
@@ -8,9 +8,9 @@ use crate::{
 
 /// Implementation of a simple statements compiler
 pub struct Compiler {
-    pub parser: Rc<RefCell<Parser>>,
+    pub parser: RcBox<Parser>,
     pub f_type: FunctionType,
-    pub function: Rc<RefCell<Function>>,
+    pub function: RcBox<Function>,
     pub enclosing: Option<Box<Compiler>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
@@ -25,14 +25,14 @@ impl Compiler {
     /// * `f_type`: type of the function undergoing compilation
     /// * `enclosing`: enclosing (internal scope) compiler
     pub fn new(
-        parser: Rc<RefCell<Parser>>,
+        parser: RcBox<Parser>,
         f_type: FunctionType,
         enclosing: Option<Box<Compiler>>,
     ) -> Compiler {
         let mut compiler = Compiler {
-            parser: parser.clone(),
+            parser,
             f_type,
-            function: Rc::new(RefCell::new(Function::new(0, "".to_string()))),
+            function: RcBox::new(Function::new(0, "".to_string())),
             enclosing,
             locals: Vec::new(),
             upvalues: Vec::new(),
@@ -61,9 +61,7 @@ impl Compiler {
     /// * `name`: new local value name
     pub fn add_local(&mut self, name: String) {
         if self.locals.len() == UINT8_COUNT.into() {
-            self.parser
-                .borrow_mut()
-                .error("Functions do not allow more than 255 local variables.");
+            self.parser.error("Functions do not allow more than 255 local variables.");
             return;
         }
 
@@ -84,9 +82,7 @@ impl Compiler {
                 break;
             }
             if self.locals[i].name == name {
-                self.parser
-                    .borrow_mut()
-                    .error("Variable already declared in this scope.");
+                self.parser.error("Variable already declared in this scope.");
             }
         }
 
@@ -109,9 +105,7 @@ impl Compiler {
         for i in (0..=self.locals.len()).rev() {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
-                    self.parser
-                        .borrow_mut()
-                        .error("Cannot read local variable when inside initializer.");
+                    self.parser.error("Cannot read local variable when inside initializer.");
                 }
 
                 return Some(i);
@@ -157,13 +151,13 @@ impl Compiler {
         }
 
         if self.upvalues.len() == UINT8_COUNT.into() {
-            self.parser.borrow_mut().error("Limits of closure variables exceeded! Max amount of closure variables is 255.");
+            self.parser.error("Limits of closure variables exceeded! Max amount of closure variables is 255.");
             return None;
         }
 
         self.upvalues.push(InternalUpvalue::new(index, is_local));
         let upvalue_count = self.upvalues.len();
-        self.function.borrow_mut().upvalue_count = upvalue_count;
+        self.function.upvalue_count = upvalue_count;
 
         Some(upvalue_count - 1)
     }
@@ -178,9 +172,9 @@ impl Compiler {
         self.scope_depth -= 1;
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                self.parser.borrow_mut().emit_instr(Opcode::CloseUpvalue);
+                self.parser.emit_instr(Opcode::CloseUpvalue);
             } else {
-                self.parser.borrow_mut().emit_instr(Opcode::Pop);
+                self.parser.emit_instr(Opcode::Pop);
             }
 
             self.locals.pop();
