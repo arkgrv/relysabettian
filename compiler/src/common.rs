@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use crate::parser::Parser;
+
 /// Describes the different modes of parsing
 /// precedence.
 #[derive(Copy, Clone)]
@@ -27,7 +29,7 @@ pub enum FunctionType {
 }
 
 /// Parsing function type
-pub type ParseFn = fn(bool);
+pub type ParseFn = fn(&mut Parser, bool);
 
 /// Implementation of a basic parsing rule
 #[derive(Clone)]
