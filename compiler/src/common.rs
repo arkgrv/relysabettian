@@ -32,8 +32,8 @@ pub type ParseFn = fn(&mut Parser, bool);
 /// Implementation of a basic parsing rule
 #[derive(Clone)]
 pub struct ParseRule {
-    pub prefix: ParseFn,
-    pub infix: ParseFn,
+    pub prefix: Option<ParseFn>,
+    pub infix: Option<ParseFn>,
     pub precedence: Precedence,
 }
 
@@ -44,7 +44,7 @@ impl ParseRule {
     /// * `prefix`: prefix parsing function
     /// * `infix`: infix parsing function
     /// * `precedence`: precedence of parsing
-    pub fn new(prefix: ParseFn, infix: ParseFn, precedence: Precedence) -> ParseRule {
+    pub fn new(prefix: Option<ParseFn>, infix: Option<ParseFn>, precedence: Precedence) -> ParseRule {
         ParseRule {
             prefix,
             infix,
