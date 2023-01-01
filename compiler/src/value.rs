@@ -2,6 +2,9 @@ use std::{rc::Rc, collections::HashMap};
 
 use crate::instruction::Opcode;
 
+/// Maximum number of UINT8 variables
+pub const UINT8_COUNT: u16 = u8::MAX as u16 + 1;
+
 /// Represents any valid value in the language's
 /// runtime environment.
 #[derive(Clone)]
