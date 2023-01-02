@@ -1,4 +1,4 @@
-use std::{rc::Rc, collections::HashMap, cell::RefCell};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::instruction::Opcode;
 
@@ -43,7 +43,7 @@ impl Chunk {
     }
 
     /// Returns a value from the chunk's instruction memory
-    /// 
+    ///
     /// Parameters:
     /// * `offset`: offset of the value
     pub fn get_code(&self, offset: usize) -> u8 {
@@ -52,7 +52,7 @@ impl Chunk {
 
     /// Sets a specific offset in the instruction memory
     /// to the given value.
-    /// 
+    ///
     /// Parameters:
     /// * `offset`: offset of the value
     /// * `value`: actual value to set
@@ -62,7 +62,7 @@ impl Chunk {
 
     /// Returns a constant (value) from the data block of
     /// this chunk.
-    /// 
+    ///
     /// Parameters:
     /// * `offset`: offset of the constant
     pub fn get_constant(&self, offset: usize) -> Value {
@@ -70,7 +70,7 @@ impl Chunk {
     }
 
     /// Writes a byte in the instruction memory.
-    /// 
+    ///
     /// Parameters:
     /// * `byte`: byte value to write
     /// * `line`: line bound to this particular instruction
@@ -80,7 +80,7 @@ impl Chunk {
     }
 
     /// Writes an instruction in the instruction memory.
-    /// 
+    ///
     /// Parameters:
     /// * `instr`: the instruction to write
     /// * `line`: line bound to this particular instruction
@@ -89,7 +89,7 @@ impl Chunk {
     }
 
     /// Adds a new constant to the memory data chunk.
-    /// 
+    ///
     /// Parameters:
     /// * `value`: new value to add
     pub fn add_constant(&mut self, value: &Value) -> usize {
@@ -98,7 +98,7 @@ impl Chunk {
     }
 
     /// Gets the line related to this instruction
-    /// 
+    ///
     /// Parameters:
     /// `instr`: instruction offset
     pub fn get_line(&self, instr: u8) -> i32 {
@@ -113,7 +113,7 @@ impl Chunk {
 }
 
 /// Native function type alias
-type NativeFn = fn(usize, Rc<Vec<Value>>);
+type NativeFn = fn(usize, Vec<Value>) -> Value;
 
 /// Represents a native (runtime environment related)
 /// function.
@@ -132,7 +132,7 @@ pub struct Upvalue {
 
 impl Upvalue {
     /// Constructs a new Upvalue
-    /// 
+    ///
     /// Parameters:
     /// * `slot`: pointer to the value's location
     pub fn new(slot: *mut Value) -> Upvalue {
@@ -153,7 +153,7 @@ pub struct Class {
 
 impl Class {
     /// Constructs a new Class
-    /// 
+    ///
     /// Parameters:
     /// * `name`: name of the class
     pub fn new(name: String) -> Class {
@@ -173,7 +173,7 @@ pub struct Instance {
 
 impl Instance {
     /// Constructs a new Instance
-    /// 
+    ///
     /// Parameters:
     /// * `class`: instantiated class
     pub fn new(class: Rc<Class>) -> Instance {
@@ -193,7 +193,7 @@ pub struct Method {
 
 impl Method {
     /// Constructs a new class method
-    /// 
+    ///
     /// Parameters:
     /// * `receiver`: instance bound to this method
     /// * `method`: closure related to this method
@@ -216,10 +216,10 @@ pub struct Function {
 
 impl Function {
     /// Constructs a new function
-    /// 
+    ///
     /// Parameters:
     /// * `arity`: number of arguments
-    /// * `name`: name of the function 
+    /// * `name`: name of the function
     pub fn new(arity: usize, name: String) -> Function {
         Function {
             arity,
@@ -245,7 +245,7 @@ pub struct Closure {
 
 impl Closure {
     /// Constructs a new Closure
-    /// 
+    ///
     /// Parameters:
     /// * `function`: function bound to this closure
     pub fn new(function: Rc<Function>) -> Closure {
@@ -279,13 +279,13 @@ impl OutputVisitor for Value {
                 } else {
                     print!("<fn {}>", f.name);
                 }
-            },
+            }
             Value::NativeFunction(_) => print!("<native fn>"),
             Value::Closure(c) => Value::Function(c.function.clone()).visit(),
             Value::Upvalue(_) => print!("upvalue"),
             Value::Instance(i) => print!("{} instance", i.class.name),
             Value::Method(m) => Value::Function(m.method.function.clone()).visit(),
-            _ => panic!("Unknown value!")
+            _ => panic!("Unknown value!"),
         }
     }
 }
