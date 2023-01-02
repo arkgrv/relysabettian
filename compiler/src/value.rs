@@ -167,7 +167,7 @@ impl Class {
 /// Represents an instance of a class
 #[derive(Clone)]
 pub struct Instance {
-    pub class: Rc<Class>,
+    pub class: Rc<RefCell<Class>>,
     pub fields: HashMap<String, Value>,
 }
 
@@ -176,7 +176,7 @@ impl Instance {
     ///
     /// Parameters:
     /// * `class`: instantiated class
-    pub fn new(class: Rc<Class>) -> Instance {
+    pub fn new(class: Rc<RefCell<Class>>) -> Instance {
         Instance {
             class: class.clone(),
             fields: HashMap::new(),
@@ -283,7 +283,7 @@ impl OutputVisitor for Value {
             Value::NativeFunction(_) => print!("<native fn>"),
             Value::Closure(c) => Value::Function(c.function.clone()).visit(),
             Value::Upvalue(_) => print!("upvalue"),
-            Value::Instance(i) => print!("{} instance", i.class.name),
+            Value::Instance(i) => print!("{} instance", (*i.class).borrow().name),
             Value::Method(m) => Value::Function(m.method.function.clone()).visit(),
             _ => panic!("Unknown value!"),
         }
