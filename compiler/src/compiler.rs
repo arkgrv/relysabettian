@@ -12,7 +12,7 @@ pub struct Compiler {
     pub parser: Rc<RefCell<Parser>>,
     pub f_type: FunctionType,
     pub function: Rc<RefCell<Function>>,
-    pub enclosing: Option<Box<Compiler>>,
+    pub enclosing: Option<Rc<RefCell<Compiler>>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
     pub scope_depth: i32,
@@ -28,7 +28,7 @@ impl Compiler {
     pub fn new(
         parser: Rc<RefCell<Parser>>,
         f_type: FunctionType,
-        enclosing: Option<Box<Compiler>>,
+        enclosing: Option<Rc<RefCell<Compiler>>>,
     ) -> Compiler {
         let mut compiler = Compiler {
             parser,
@@ -106,7 +106,7 @@ impl Compiler {
     ///
     /// Parameters:
     /// * `name`: name of the value to resolve (find)
-    pub fn resolve_local(&mut self, name: String) -> Option<usize> {
+    pub fn resolve_local(&self, name: String) -> Option<usize> {
         for i in (0..=self.locals.len()).rev() {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
@@ -131,13 +131,13 @@ impl Compiler {
             return None;
         }
 
-        let local = self.enclosing.as_mut().unwrap().resolve_local(name.clone());
+        let local = (*self.enclosing.unwrap()).borrow().resolve_local(name.clone());
         if local.is_some() {
-            self.enclosing.as_mut().unwrap().locals[local.unwrap()].is_captured = true;
+            (*self.enclosing.unwrap()).borrow_mut().locals[local.unwrap()].is_captured = true;
             return self.add_upvalue(local.unwrap() as u8, true);
         }
 
-        let upvalue = self.enclosing.as_mut().unwrap().resolve_upvalue(name);
+        let upvalue = (*self.enclosing.unwrap()).borrow().resolve_upvalue(name);
         if upvalue.is_some() {
             return self.add_upvalue(upvalue.unwrap() as u8, false);
         }
