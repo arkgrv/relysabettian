@@ -4,7 +4,7 @@ use compiler::value::{UINT8_COUNT, Closure};
 pub const FRAMES_MAX: u16 = 64;
 
 /// Max size of stack
-pub const STACK_MAX: u16 = FRAMES_MAX * UINT8_COUNT;
+pub const STACK_MAX: usize = (FRAMES_MAX * UINT8_COUNT) as usize;
 
 /// Result of runtime phase
 pub enum InterpretResult {
