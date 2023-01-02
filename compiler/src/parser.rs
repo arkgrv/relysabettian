@@ -55,10 +55,22 @@ impl Parser {
         result
     }
 
-    pub fn compile() -> Option<Rc<Function>> {
-        panic!();
+    /// Compiles the source code and returns a function
+    pub fn compile(&mut self) -> Option<Function> {
+        while !self.match_token(TokenType::Eof) {
+            self.declaration();
+        }
+
+        let function = self.end_compiler();
+
+        if self.had_error {
+            return None;
+        }
+
+        Some(function)
     }
 
+    /// Advances parser moving forward in the tokens chain
     pub fn advance(&mut self) {
         self.previous = self.current.clone();
 
