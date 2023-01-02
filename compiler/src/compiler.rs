@@ -8,11 +8,12 @@ use crate::{
 };
 
 /// Implementation of a simple statements compiler
+#[derive(Clone)]
 pub struct Compiler {
     pub parser: Rc<RefCell<Parser>>,
     pub f_type: FunctionType,
     pub function: Rc<RefCell<Function>>,
-    pub enclosing: Option<Rc<RefCell<Compiler>>>,
+    pub enclosing: Rc<RefCell<Option<Compiler>>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
     pub scope_depth: i32,
@@ -28,7 +29,7 @@ impl Compiler {
     pub fn new(
         parser: Rc<RefCell<Parser>>,
         f_type: FunctionType,
-        enclosing: Option<Rc<RefCell<Compiler>>>,
+        enclosing: Rc<RefCell<Option<Compiler>>>,
     ) -> Compiler {
         let mut compiler = Compiler {
             parser,
@@ -127,17 +128,17 @@ impl Compiler {
     /// Parameters:
     /// * `name`: name of the upvalue to resolve (find)
     pub fn resolve_upvalue(&mut self, name: String) -> Option<usize> {
-        if self.enclosing.is_none() {
+        if (*self.enclosing).borrow().is_none() {
             return None;
         }
 
-        let local = (*self.enclosing.unwrap()).borrow().resolve_local(name.clone());
+        let local = (*self.enclosing).borrow().as_ref().unwrap().resolve_local(name.clone());
         if local.is_some() {
-            (*self.enclosing.unwrap()).borrow_mut().locals[local.unwrap()].is_captured = true;
+            (*self.enclosing).borrow_mut().as_mut().unwrap().locals[local.unwrap()].is_captured = true;
             return self.add_upvalue(local.unwrap() as u8, true);
         }
 
-        let upvalue = (*self.enclosing.unwrap()).borrow().resolve_upvalue(name);
+        let upvalue = (*self.enclosing).borrow_mut().as_mut().unwrap().resolve_upvalue(name);
         if upvalue.is_some() {
             return self.add_upvalue(upvalue.unwrap() as u8, false);
         }
@@ -198,7 +199,7 @@ impl Compiler {
 
 /// Compiler for classes
 pub struct ClassCompiler {
-    pub enclosing: Option<Box<ClassCompiler>>,
+    pub enclosing: Rc<RefCell<ClassCompiler>>,
     pub has_superclass: bool,
 }
 
@@ -207,7 +208,7 @@ impl ClassCompiler {
     ///
     /// Parameters:
     /// * `enclosing`: enclosing class compiler
-    pub fn new(enclosing: Option<Box<ClassCompiler>>) -> ClassCompiler {
+    pub fn new(enclosing: Rc<RefCell<ClassCompiler>>) -> ClassCompiler {
         ClassCompiler {
             enclosing,
             has_superclass: false,

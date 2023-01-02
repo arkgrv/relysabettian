@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 custom_error = "*"
-rc-box = "*"
 language = { path = "../language" }
