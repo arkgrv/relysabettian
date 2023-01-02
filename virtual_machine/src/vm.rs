@@ -1,8 +1,8 @@
 use std::{collections::HashMap, rc::Rc, cell::RefCell};
 
-use compiler::value::{Value, Upvalue, Class, Closure};
+use compiler::value::{Value, Upvalue, Class, Closure, Instance};
 
-use crate::common::{CallFrame, STACK_MAX, InterpretResult};
+use crate::{common::{CallFrame, STACK_MAX, InterpretResult}, call_visitor::CallVisitor};
 
 /// Virtual Machine implementation
 pub struct VirtualMachine {
@@ -52,16 +52,61 @@ impl VirtualMachine {
         &self.stack[self.stack.len() - distance - 1]
     }
 
+    /// Calls a callable value (might be a function, method or native function)
+    /// 
+    /// Parameters:
+    /// * `callee`: object being called
+    /// * `arg_count`: number of arguments
     pub fn call_value(&mut self, callee: Rc<RefCell<Value>>, arg_count: usize) -> bool {
-        panic!("Not implemented!")
+        let mut visitor = CallVisitor::new(arg_count, Rc::new(RefCell::new(self)));
+        visitor.visit(callee)
     }
 
+    /// Invokes a callable object
+    /// 
+    /// Parameters:
+    /// * `name`: name of the object
+    /// * `arg_count`: number of arguments
     pub fn invoke(&mut self, name: String, arg_count: usize) -> bool {
-        panic!("Not implemented!")
+        let found = self.peek(arg_count).clone();
+        let value = match found {
+            Value::Instance(i) => Some(i),
+            _ => None,
+        };
+
+        if value.is_none() {
+            self.runtime_error("This object is not an instance.");
+            return false;
+        }
+
+        let instance = value.unwrap();
+        let value = instance.fields.get(&name);
+
+        let len = self.stack.len();
+        if value.is_some() {
+            self.stack[len - arg_count - 1] = value.unwrap().clone();
+            return self.call_value(Rc::new(RefCell::new(value.unwrap().clone())), arg_count);
+        }
+
+        self.invoke_from_class(Rc::clone(&instance.class), name, arg_count)
     }
 
+    /// Invokes a method from a class
+    /// 
+    /// * `class`: class to use
+    /// * `name`: name of the method
+    /// * `arg_count`: number of arguments
     pub fn invoke_from_class(&mut self, class: Rc<RefCell<Class>>, name: String, arg_count: usize) -> bool {
-        panic!("Not implemented!")
+        let binding = (*class).borrow();
+
+        let found = binding.methods.get(&name);
+        if found.is_none() {
+            self.runtime_error(&format!("Undefined property '{}'.", name));
+            return false;
+        }
+
+        let method = found.unwrap();
+        self.call(Rc::new(method.clone()), arg_count)
     }
 
     pub fn bind_method(&mut self, class_value: Rc<RefCell<Class>>, name: String) -> bool {
