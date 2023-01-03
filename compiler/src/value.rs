@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, ops::Deref};
 
 use crate::instruction::Opcode;
 
@@ -13,13 +13,13 @@ pub enum Value {
     String(String),
     Double(f64),
     Bool(bool),
-    Function(Rc<Function>),
-    NativeFunction(Rc<NativeFunction>),
-    Closure(Rc<Closure>),
-    Upvalue(Rc<Upvalue>),
-    Class(Rc<Class>),
-    Instance(Rc<Instance>),
-    Method(Rc<Method>),
+    Function(Rc<RefCell<Function>>),
+    NativeFunction(Rc<RefCell<NativeFunction>>),
+    Closure(Rc<RefCell<Closure>>),
+    Upvalue(Rc<RefCell<Upvalue>>),
+    Class(Rc<RefCell<Class>>),
+    Instance(Rc<RefCell<Instance>>),
+    Method(Rc<RefCell<Method>>),
 }
 
 /// This structure holds a chunk of memory which is
@@ -125,9 +125,9 @@ pub struct NativeFunction {
 /// Represents an upvalue in the language
 #[derive(Clone)]
 pub struct Upvalue {
-    pub location: *mut Value,
+    pub location: Rc<RefCell<Option<Value>>>,
     pub closed: Value,
-    pub next: Option<Rc<Value>>,
+    pub next: Rc<RefCell<Option<Value>>>,
 }
 
 impl Upvalue {
@@ -135,11 +135,11 @@ impl Upvalue {
     ///
     /// Parameters:
     /// * `slot`: pointer to the value's location
-    pub fn new(slot: *mut Value) -> Upvalue {
+    pub fn new(slot: Rc<RefCell<Option<Value>>>) -> Upvalue {
         Upvalue {
             location: slot,
             closed: Value::Null,
-            next: None,
+            next: Rc::new(RefCell::new(None)),
         }
     }
 }
@@ -187,8 +187,8 @@ impl Instance {
 /// Represents a class' method
 #[derive(Clone)]
 pub struct Method {
-    pub receiver: Rc<Instance>,
-    pub method: Rc<Closure>,
+    pub receiver: Rc<RefCell<Instance>>,
+    pub method: Rc<RefCell<Closure>>,
 }
 
 impl Method {
@@ -197,7 +197,7 @@ impl Method {
     /// Parameters:
     /// * `receiver`: instance bound to this method
     /// * `method`: closure related to this method
-    pub fn new(receiver: Rc<Instance>, method: Rc<Closure>) -> Method {
+    pub fn new(receiver: Rc<RefCell<Instance>>, method: Rc<RefCell<Closure>>) -> Method {
         Method {
             receiver: receiver.clone(),
             method: method.clone(),
@@ -239,7 +239,7 @@ impl PartialEq for Function {
 /// Represents a function closure
 #[derive(Clone)]
 pub struct Closure {
-    pub function: Rc<Function>,
+    pub function: Rc<RefCell<Function>>,
     pub upvalues: Vec<Option<Rc<Upvalue>>>,
 }
 
@@ -248,13 +248,13 @@ impl Closure {
     ///
     /// Parameters:
     /// * `function`: function bound to this closure
-    pub fn new(function: Rc<Function>) -> Closure {
+    pub fn new(function: Rc<RefCell<Function>>) -> Closure {
         let mut cl = Closure {
             function: function.clone(),
             upvalues: Vec::new(),
         };
 
-        cl.upvalues.resize(function.upvalue_count, None);
+        cl.upvalues.resize((*function).borrow().upvalue_count, None);
         cl
     }
 }
@@ -274,17 +274,27 @@ impl OutputVisitor for Value {
             Value::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
             Value::String(s) => print!("{}", s),
             Value::Function(f) => {
-                if f.name.is_empty() {
+                let tmp = *f;
+                if (*tmp).borrow().deref().name.is_empty() {
                     print!("<main>");
                 } else {
-                    print!("<fn {}>", f.name);
+                    print!("<fn {}>", (*tmp).borrow().name);
                 }
             }
             Value::NativeFunction(_) => print!("<native fn>"),
-            Value::Closure(c) => Value::Function(c.function.clone()).visit(),
+            Value::Closure(c) => {
+                let tmp = *c;
+                Value::Function(Rc::clone(&(*tmp).borrow().function)).visit()
+            },
             Value::Upvalue(_) => print!("upvalue"),
-            Value::Instance(i) => print!("{} instance", (*i.class).borrow().name),
-            Value::Method(m) => Value::Function(m.method.function.clone()).visit(),
+            Value::Instance(i) => {
+                let tmp = *i;
+                print!("{} instance", (*tmp).borrow().class.deref().borrow().name);
+            },
+            Value::Method(m) => {
+                let tmp = *m;
+                Value::Function((*tmp).borrow().method.deref().borrow().function).visit();
+            },
             _ => panic!("Unknown value!"),
         }
     }
