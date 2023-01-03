@@ -139,7 +139,7 @@ impl Upvalue {
         Upvalue {
             location: slot,
             closed: Value::Null,
-            next: unsafe { std::ptr::null_mut() },
+            next: std::ptr::null_mut(),
         }
     }
 }
@@ -255,7 +255,7 @@ impl Closure {
         };
 
         let uval_count = unsafe { (*function).upvalue_count };
-        cl.upvalues.resize(uval_count, unsafe { std::ptr::null_mut() });
+        cl.upvalues.resize(uval_count, std::ptr::null_mut());
         cl
     }
 }
@@ -278,7 +278,7 @@ impl OutputVisitor for Value {
                 if unsafe { (*(*f)).name.is_empty() } {
                     print!("<main>");
                 } else {
-                    print!("<fn {}>", unsafe { (*(*f)).name });
+                    print!("<fn {}>", unsafe { f.as_ref().unwrap().name.clone() });
                 }
             }
             Value::NativeFunction(_) => print!("<native fn>"),
@@ -287,7 +287,7 @@ impl OutputVisitor for Value {
             },
             Value::Upvalue(_) => print!("upvalue"),
             Value::Instance(i) => {
-                print!("{} instance", unsafe { (*(*(*i)).class).name });
+                print!("{} instance", unsafe { (*i.as_ref().unwrap().class).name.clone() });
             },
             Value::Method(m) => {
                 Value::Function(unsafe { (*(*(*m)).method).function } ).visit();
