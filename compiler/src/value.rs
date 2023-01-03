@@ -274,7 +274,7 @@ impl OutputVisitor for Value {
             Value::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
             Value::String(s) => print!("{}", s),
             Value::Function(f) => {
-                let tmp = *f;
+                let tmp = Rc::clone(&*f);
                 if (*tmp).borrow().deref().name.is_empty() {
                     print!("<main>");
                 } else {
@@ -283,17 +283,19 @@ impl OutputVisitor for Value {
             }
             Value::NativeFunction(_) => print!("<native fn>"),
             Value::Closure(c) => {
-                let tmp = *c;
-                Value::Function(Rc::clone(&(*tmp).borrow().function)).visit()
+                let tmp = Rc::clone(&*c);
+                let tmp = tmp.borrow();
+                Value::Function(Rc::clone(&tmp.function)).visit()
             },
             Value::Upvalue(_) => print!("upvalue"),
             Value::Instance(i) => {
-                let tmp = *i;
+                let tmp = Rc::clone(&*i);
                 print!("{} instance", (*tmp).borrow().class.deref().borrow().name);
             },
             Value::Method(m) => {
-                let tmp = *m;
-                Value::Function((*tmp).borrow().method.deref().borrow().function).visit();
+                let tmp = Rc::clone(&*m);
+                let closure = (*tmp).borrow().method.clone();
+                Value::Function((*closure).borrow().function.clone()).visit();
             },
             _ => panic!("Unknown value!"),
         }
