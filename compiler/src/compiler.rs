@@ -30,7 +30,7 @@ impl Compiler {
         let mut compiler = Compiler {
             parser,
             f_type,
-            function: unsafe { null_mut() },
+            function: null_mut(),
             enclosing,
             locals: Vec::new(),
             upvalues: Vec::new(),
@@ -38,8 +38,8 @@ impl Compiler {
         };
 
         compiler.function = unsafe { alloc(Layout::new::<Function>()) } as *mut Function;
-        unsafe { *compiler.function }.arity = 0;
-        unsafe { *compiler.function }.name = "".to_string();
+        unsafe { compiler.function.as_mut() }.unwrap().arity = 0;
+        unsafe { compiler.function.as_mut() }.unwrap().name = "".to_string();
 
         compiler.locals.push(Local::new(
             if f_type == FunctionType::Function {
@@ -63,7 +63,7 @@ impl Compiler {
     /// * `name`: new local value name
     pub fn add_local(&mut self, name: String) {
         if self.locals.len() == UINT8_COUNT.into() {
-            unsafe { *self.parser }
+            unsafe { self.parser.as_mut() }.unwrap()
                 .error("Functions do not allow more than 255 local variables.");
             return;
         }
@@ -85,7 +85,7 @@ impl Compiler {
                 break;
             }
             if self.locals[i].name == name {
-                unsafe { *self.parser }
+                unsafe { self.parser.as_mut() }.unwrap()
                     .error("Variable already declared in this scope.");
             }
         }
@@ -109,7 +109,7 @@ impl Compiler {
         for i in (0..=self.locals.len()).rev() {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
-                    unsafe { *self.parser }
+                    unsafe { self.parser.as_mut() }.unwrap()
                         .error("Cannot read local variable when inside initializer.");
                 }
 
@@ -129,13 +129,13 @@ impl Compiler {
             return None;
         }
 
-        let local = unsafe { *self.enclosing }.resolve_local(name.clone());
+        let local = unsafe { self.enclosing.as_mut() }.unwrap().resolve_local(name.clone());
         if local.is_some() {
-            unsafe { *self.enclosing }.locals[local.unwrap()].is_captured = true;
+            unsafe { self.enclosing.as_mut() }.unwrap().locals[local.unwrap()].is_captured = true;
             return self.add_upvalue(local.unwrap() as u8, true);
         }
 
-        let upvalue = unsafe { *self.enclosing }.resolve_upvalue(name);
+        let upvalue = unsafe { self.enclosing.as_mut() }.unwrap().resolve_upvalue(name);
         if upvalue.is_some() {
             return self.add_upvalue(upvalue.unwrap() as u8, false);
         }
@@ -156,7 +156,7 @@ impl Compiler {
         }
 
         if self.upvalues.len() == UINT8_COUNT.into() {
-            unsafe { *self.parser }.error(
+            unsafe { self.parser.as_mut() }.unwrap().error(
                 "Limits of closure variables exceeded! Max amount of closure variables is 255.",
             );
             return None;
@@ -164,7 +164,7 @@ impl Compiler {
 
         self.upvalues.push(InternalUpvalue::new(index, is_local));
         let upvalue_count = self.upvalues.len();
-        unsafe { *self.function }.upvalue_count = upvalue_count;
+        unsafe { self.function.as_mut() }.unwrap().upvalue_count = upvalue_count;
 
         Some(upvalue_count - 1)
     }
@@ -179,9 +179,9 @@ impl Compiler {
         self.scope_depth -= 1;
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                unsafe { *self.parser }.emit_instr(Opcode::CloseUpvalue);
+                unsafe { self.parser.as_mut() }.unwrap().emit_instr(Opcode::CloseUpvalue);
             } else {
-                unsafe { *self.parser }.emit_instr(Opcode::Pop);
+                unsafe { self.parser.as_mut() }.unwrap().emit_instr(Opcode::Pop);
             }
 
             self.locals.pop();
