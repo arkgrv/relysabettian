@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, ops::Deref};
+use std::{alloc::Layout, alloc::alloc, collections::HashMap};
 
 use crate::instruction::Opcode;
 
@@ -13,13 +13,13 @@ pub enum Value {
     String(String),
     Double(f64),
     Bool(bool),
-    Function(Rc<RefCell<Function>>),
-    NativeFunction(Rc<RefCell<NativeFunction>>),
-    Closure(Rc<RefCell<Closure>>),
-    Upvalue(Rc<RefCell<Upvalue>>),
-    Class(Rc<RefCell<Class>>),
-    Instance(Rc<RefCell<Instance>>),
-    Method(Rc<RefCell<Method>>),
+    Function(*mut Function),
+    NativeFunction(*mut NativeFunction),
+    Closure(*mut Closure),
+    Upvalue(*mut Upvalue),
+    Class(*mut Class),
+    Instance(*mut Instance),
+    Method(*mut Method),
 }
 
 /// This structure holds a chunk of memory which is
@@ -119,15 +119,15 @@ type NativeFn = fn(usize, Vec<Value>) -> Value;
 /// function.
 #[derive(Clone)]
 pub struct NativeFunction {
-    pub function: NativeFn,
+    pub function: *mut NativeFn,
 }
 
 /// Represents an upvalue in the language
 #[derive(Clone)]
 pub struct Upvalue {
-    pub location: Rc<RefCell<Option<Value>>>,
+    pub location: *mut Value,
     pub closed: Value,
-    pub next: Rc<RefCell<Option<Value>>>,
+    pub next: *mut Value,
 }
 
 impl Upvalue {
@@ -135,11 +135,11 @@ impl Upvalue {
     ///
     /// Parameters:
     /// * `slot`: pointer to the value's location
-    pub fn new(slot: Rc<RefCell<Option<Value>>>) -> Upvalue {
+    pub fn new(slot: *mut Value) -> Upvalue {
         Upvalue {
             location: slot,
             closed: Value::Null,
-            next: Rc::new(RefCell::new(None)),
+            next: unsafe { std::ptr::null_mut() },
         }
     }
 }
@@ -167,7 +167,7 @@ impl Class {
 /// Represents an instance of a class
 #[derive(Clone)]
 pub struct Instance {
-    pub class: Rc<RefCell<Class>>,
+    pub class: *mut Class,
     pub fields: HashMap<String, Value>,
 }
 
@@ -176,9 +176,9 @@ impl Instance {
     ///
     /// Parameters:
     /// * `class`: instantiated class
-    pub fn new(class: Rc<RefCell<Class>>) -> Instance {
+    pub fn new(class: *mut Class) -> Instance {
         Instance {
-            class: class.clone(),
+            class,
             fields: HashMap::new(),
         }
     }
@@ -187,8 +187,8 @@ impl Instance {
 /// Represents a class' method
 #[derive(Clone)]
 pub struct Method {
-    pub receiver: Rc<RefCell<Instance>>,
-    pub method: Rc<RefCell<Closure>>,
+    pub receiver: *mut Instance,
+    pub method: *mut Closure,
 }
 
 impl Method {
@@ -197,10 +197,10 @@ impl Method {
     /// Parameters:
     /// * `receiver`: instance bound to this method
     /// * `method`: closure related to this method
-    pub fn new(receiver: Rc<RefCell<Instance>>, method: Rc<RefCell<Closure>>) -> Method {
+    pub fn new(receiver: *mut Instance, method: *mut Closure) -> Method {
         Method {
-            receiver: receiver.clone(),
-            method: method.clone(),
+            receiver,
+            method,
         }
     }
 }
@@ -211,7 +211,7 @@ pub struct Function {
     pub arity: usize,
     pub upvalue_count: usize,
     pub name: String,
-    pub chunk: Rc<RefCell<Chunk>>,
+    pub chunk: *mut Chunk,
 }
 
 impl Function {
@@ -225,7 +225,7 @@ impl Function {
             arity,
             upvalue_count: 0,
             name: name.clone(),
-            chunk: Rc::new(RefCell::new(Chunk::new())),
+            chunk: unsafe { alloc(Layout::new::<Chunk>()) as *mut Chunk },
         }
     }
 }
@@ -239,8 +239,8 @@ impl PartialEq for Function {
 /// Represents a function closure
 #[derive(Clone)]
 pub struct Closure {
-    pub function: Rc<RefCell<Function>>,
-    pub upvalues: Vec<Option<Rc<Upvalue>>>,
+    pub function: *mut Function,
+    pub upvalues: Vec<*mut Upvalue>,
 }
 
 impl Closure {
@@ -248,13 +248,14 @@ impl Closure {
     ///
     /// Parameters:
     /// * `function`: function bound to this closure
-    pub fn new(function: Rc<RefCell<Function>>) -> Closure {
+    pub fn new(function: *mut Function) -> Closure {
         let mut cl = Closure {
             function: function.clone(),
             upvalues: Vec::new(),
         };
 
-        cl.upvalues.resize((*function).borrow().upvalue_count, None);
+        let uval_count = unsafe { (*function).upvalue_count };
+        cl.upvalues.resize(uval_count, unsafe { std::ptr::null_mut() });
         cl
     }
 }
@@ -274,28 +275,22 @@ impl OutputVisitor for Value {
             Value::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
             Value::String(s) => print!("{}", s),
             Value::Function(f) => {
-                let tmp = Rc::clone(&*f);
-                if (*tmp).borrow().deref().name.is_empty() {
+                if unsafe { (*(*f)).name.is_empty() } {
                     print!("<main>");
                 } else {
-                    print!("<fn {}>", (*tmp).borrow().name);
+                    print!("<fn {}>", unsafe { (*(*f)).name });
                 }
             }
             Value::NativeFunction(_) => print!("<native fn>"),
             Value::Closure(c) => {
-                let tmp = Rc::clone(&*c);
-                let tmp = tmp.borrow();
-                Value::Function(Rc::clone(&tmp.function)).visit()
+                Value::Function(unsafe { (*(*c)).function }).visit()
             },
             Value::Upvalue(_) => print!("upvalue"),
             Value::Instance(i) => {
-                let tmp = Rc::clone(&*i);
-                print!("{} instance", (*tmp).borrow().class.deref().borrow().name);
+                print!("{} instance", unsafe { (*(*(*i)).class).name });
             },
             Value::Method(m) => {
-                let tmp = Rc::clone(&*m);
-                let closure = (*tmp).borrow().method.clone();
-                Value::Function((*closure).borrow().function.clone()).visit();
+                Value::Function(unsafe { (*(*(*m)).method).function } ).visit();
             },
             _ => panic!("Unknown value!"),
         }
