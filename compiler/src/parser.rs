@@ -1,4 +1,8 @@
-use std::{cell::RefCell, ops::Deref, rc::Rc, num::ParseFloatError};
+use std::{
+    alloc::{alloc, Layout},
+    num::ParseFloatError,
+    ptr::null_mut,
+};
 
 use language::{
     token::{Token, TokenType},
@@ -6,7 +10,7 @@ use language::{
 };
 
 use crate::{
-    common::{FunctionType, ParseRule, Precedence},
+    common::{raw_clone, FunctionType, ParseRule, Precedence},
     compiler::{ClassCompiler, Compiler},
     instruction::Opcode,
     value::{Chunk, Function, Value},
@@ -19,8 +23,8 @@ pub struct Parser {
     pub current: Token,
     pub scanner: Tokenizer,
 
-    pub compiler: Rc<RefCell<Compiler>>,
-    pub class_compiler: Rc<RefCell<Option<ClassCompiler>>>,
+    pub compiler: *mut Compiler,
+    pub class_compiler: *mut ClassCompiler,
 
     pub had_error: bool,
     pub panic_mode: bool,
@@ -31,28 +35,26 @@ impl Parser {
     ///
     /// Parameters:
     /// * `source`: source code as String
-    #[allow(invalid_value)]
     pub fn new(source: &String) -> Parser {
-        let parser = Parser {
+        let mut parser = Parser {
             previous: Token::new(TokenType::Eof, source.clone(), 0),
             current: Token::new(TokenType::Eof, source.clone(), 0),
             scanner: Tokenizer::new(source.clone()),
-            compiler: unsafe { std::mem::zeroed() },
-            class_compiler: Rc::new(RefCell::new(None)),
+            compiler: null_mut(),
+            class_compiler: null_mut(),
             had_error: false,
             panic_mode: false,
         };
 
-        let tp = Rc::new(RefCell::new(parser));
-        (*tp).borrow_mut().compiler = Rc::new(RefCell::new(Compiler::new(
-            Rc::clone(&tp),
-            FunctionType::Main,
-            Rc::new(RefCell::new(None)),
-        )));
-        (*tp).borrow_mut().advance();
+        parser.compiler = unsafe { alloc(Layout::new::<Compiler>()) } as *mut Compiler;
+        unsafe {
+            (*parser.compiler).parser = &mut parser;
+            (*parser.compiler).f_type = FunctionType::Main;
+            (*parser.compiler).enclosing = null_mut();
+        }
+        parser.advance();
 
-        let result = (*tp).borrow().clone();
-        result
+        parser
     }
 
     /// Compiles the source code and returns a function
@@ -117,9 +119,7 @@ impl Parser {
     /// Parameters:
     /// * `instr`: opcode of this instruction
     pub fn emit_instr(&mut self, instr: Opcode) {
-        (*self.current_chunk())
-            .borrow_mut()
-            .write_instr(instr, self.previous.line);
+        unsafe { self.current_chunk().as_mut() }.unwrap().write_instr(instr, self.previous.line);
     }
 
     /// Emits a raw instruction or data padding
@@ -127,9 +127,7 @@ impl Parser {
     /// Parameters:
     /// * `byte`: instruction's byte value or data padding value
     pub fn emit_byte(&mut self, byte: u8) {
-        (*self.current_chunk())
-            .borrow_mut()
-            .write_byte(byte, self.previous.line);
+        unsafe { self.current_chunk().as_mut() }.unwrap().write_byte(byte, self.previous.line);
     }
 
     /// Emits an instruction with correlated data or padding
@@ -159,7 +157,7 @@ impl Parser {
     pub fn emit_loop(&mut self, loop_start: usize) {
         self.emit_instr(Opcode::Loop);
 
-        let offset = (*self.current_chunk()).borrow().count() - loop_start - 2;
+        let offset = unsafe { self.current_chunk().as_mut() }.unwrap().count() - loop_start - 2;
         if offset > u16::MAX.into() {
             self.error("Loop body contains too many instructions.");
         }
@@ -177,12 +175,12 @@ impl Parser {
         self.emit_instr(instr);
         self.emit_byte(0xff);
         self.emit_byte(0xff);
-        (*self.current_chunk()).borrow().count() - 2
+        unsafe { self.current_chunk().as_ref() }.unwrap().count() - 2
     }
 
     /// Emits a new return
     pub fn emit_return(&mut self) {
-        if (*self.compiler).borrow().f_type == FunctionType::Initializer {
+        if unsafe { self.compiler.as_mut() }.unwrap().f_type == FunctionType::Initializer {
             self.emit_instr_data(Opcode::GetLocal, 0);
         } else {
             self.emit_instr(Opcode::Nop);
@@ -196,11 +194,7 @@ impl Parser {
     /// Parameters:
     /// * `value`: value of the new constant
     pub fn make_constant(&mut self, value: Value) -> Option<u8> {
-        let constant = self
-            .current_chunk()
-            .deref()
-            .borrow_mut()
-            .add_constant(&value);
+        let constant = unsafe { self.current_chunk().as_mut() }.unwrap().add_constant(&value);
         if constant > u8::MAX.into() {
             self.error("Max limit of constants reached.");
             return None;
@@ -226,31 +220,32 @@ impl Parser {
     /// Parameters:
     /// * `offset`: offset of the jump
     pub fn patch_jump(&mut self, offset: usize) {
-        let jump = (*self.current_chunk()).borrow().count() - offset - 2;
+        let jump = unsafe { self.current_chunk().as_ref() }.unwrap().count() - offset - 2;
         if jump > u16::MAX.into() {
             self.error("Jump is too long.");
         }
 
         let first_byte = ((jump >> 8) & 0xff) as u8;
         let second_byte = (jump & 0xff) as u8;
-        (*self.current_chunk())
-            .borrow_mut()
-            .set_code(offset, first_byte);
-        (*self.current_chunk())
-            .borrow_mut()
-            .set_code(offset + 1, second_byte);
+        unsafe { self.current_chunk().as_mut() }.unwrap().set_code(offset, first_byte);
+        unsafe { self.current_chunk().as_mut() }.unwrap().set_code(offset + 1, second_byte);
     }
 
     /// Ends this compiler and returns the corresponding function
     pub fn end_compiler(&mut self) -> Function {
         self.emit_return();
-        (*self.compiler).borrow().function.deref().borrow().clone()
+        let function = unsafe { &*(*self.compiler).function };
+        function.clone()
     }
 
     pub fn get_rule(&mut self, t_type: TokenType) -> ParseRule {
         let rules = vec![
             // OpenParen
-            ParseRule::new(Some(Parser::grouping), Some(Parser::grouping), Precedence::Call),
+            ParseRule::new(
+                Some(Parser::grouping),
+                Some(Parser::grouping),
+                Precedence::Call,
+            ),
             // CloseParen
             ParseRule::new(None, None, Precedence::None),
             // OpenCurly
@@ -361,7 +356,9 @@ impl Parser {
             TokenType::Excl => parser.emit_instr(Opcode::Not),
             TokenType::Minus => parser.emit_instr(Opcode::Negate),
             TokenType::Tilde => parser.emit_instr(Opcode::BwNot),
-            _ => { return; }
+            _ => {
+                return;
+            }
         }
     }
 
@@ -390,7 +387,9 @@ impl Parser {
             TokenType::Pipe => parser.emit_instr(Opcode::BwOr),
             TokenType::Ampersand => parser.emit_instr(Opcode::BwAnd),
             TokenType::Caret => parser.emit_instr(Opcode::BwXor),
-            _ => { return; }
+            _ => {
+                return;
+            }
         }
     }
 
@@ -402,7 +401,6 @@ impl Parser {
 
     /// Parses a dot (reference to method or field of class) expression
     pub fn dot(parser: &mut Parser, can_assign: bool) {
-
         parser.consume(TokenType::Identifier, "Expected property name '.'.");
         let name = parser.identifier_constant(parser.previous.text.clone());
 
@@ -420,7 +418,7 @@ impl Parser {
 
     /// Parses a numeric literal value
     pub fn number(parser: &mut Parser, _can_assign: bool) {
-        let numeric_value: Result<f64, ParseFloatError>  = parser.previous.text.parse();
+        let numeric_value: Result<f64, ParseFloatError> = parser.previous.text.parse();
         if numeric_value.is_err() {
             parser.error("Cannot parse non numeric value!");
         }
@@ -443,7 +441,9 @@ impl Parser {
             TokenType::False => parser.emit_instr(Opcode::False),
             TokenType::Null => parser.emit_instr(Opcode::Nop),
             TokenType::True => parser.emit_instr(Opcode::True),
-            _ => { return ;}
+            _ => {
+                return;
+            }
         }
     }
 
@@ -454,15 +454,15 @@ impl Parser {
 
     /// Parses a super (superclass) expression
     pub fn super_(parser: &mut Parser, _can_assign: bool) {
-        if (*parser.class_compiler).borrow().is_none() {
+        if parser.class_compiler == null_mut()  {
             parser.error("'super' cannot be used outside of a class instance.");
-        } else if !(*parser.class_compiler).borrow().as_ref().unwrap().has_superclass {
+        } else if !unsafe { (*parser.class_compiler).has_superclass } {
             parser.error("'super' cannot be used in a class that does not inherit.");
         }
 
         parser.consume(TokenType::Dot, "Expected '.' after 'super'.");
         parser.consume(TokenType::Identifier, "Expected superclass method name.");
-        
+
         let name = parser.identifier_constant(parser.previous.text.clone());
 
         parser.named_variable("this".to_string(), false);
@@ -503,20 +503,20 @@ impl Parser {
     }
 
     /// Parses and declares a named variable
-    /// 
+    ///
     /// Parameters:
     /// * `name`: name of new variable
     /// * `can_assign`: tells whether this is an assigment target or not
     pub fn named_variable(&mut self, name: String, can_assign: bool) {
         let get_op: Opcode;
         let set_op: Opcode;
-        let arg = (*self.compiler).borrow().resolve_local(name.clone());
+        let arg = unsafe { self.compiler.as_mut() }.unwrap().resolve_local(name.clone());
 
         if arg.is_some() {
             get_op = Opcode::GetLocal;
             set_op = Opcode::SetLocal;
         } else {
-            let arg = (*self.compiler).borrow_mut().resolve_upvalue(name);
+            let arg = unsafe { self.compiler.as_mut() }.unwrap().resolve_upvalue(name);
             if arg.is_some() {
                 get_op = Opcode::GetUpvalue;
                 set_op = Opcode::SetUpvalue;
@@ -535,7 +535,7 @@ impl Parser {
     }
 
     /// Parses the expression with the given precedence
-    /// 
+    ///
     /// Parameters:
     /// * `precedence`: precedence to use during parsing phase
     pub fn parse_precedence(&mut self, precedence: Precedence) {
@@ -563,7 +563,7 @@ impl Parser {
     }
 
     /// Creates a new constant for the given identifier
-    /// 
+    ///
     /// Parameters:
     /// * `name`: name of new identifier
     pub fn identifier_constant(&mut self, name: String) -> Option<u8> {
@@ -572,26 +572,28 @@ impl Parser {
     }
 
     /// Parses a variable and declares it
-    /// 
+    ///
     /// Parameters:
     /// * `message`: error message if parsing fails
     pub fn parse_variable(&mut self, message: &str) -> u8 {
         self.consume(TokenType::Identifier, message);
 
-        (*self.compiler).borrow_mut().declare_variable(self.previous.text.clone());
-        if (*self.compiler).borrow().is_local() { return 0; }
+        unsafe { self.compiler.as_mut() .unwrap()}.declare_variable(self.previous.text.clone());
+        if unsafe { self.compiler.as_ref() }.unwrap().is_local() {
+            return 0;
+        }
 
         let result = self.identifier_constant(self.previous.text.clone());
         result.unwrap()
     }
 
     /// Defines a new variable
-    /// 
+    ///
     /// Parameters:
     /// * `global`: index of global variable
     pub fn define_variable(&mut self, global: u8) {
-        if (*self.compiler).borrow().is_local() {
-            (*self.compiler).borrow_mut().mark_initialized();
+        if unsafe { self.compiler.as_ref() }.unwrap().is_local() {
+            unsafe { self.compiler.as_mut() }.unwrap().mark_initialized();
             return;
         }
 
@@ -610,7 +612,9 @@ impl Parser {
                 }
                 arg_count += 1;
 
-                if !self.match_token(TokenType::Comma) { break };
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                };
             }
         }
 
@@ -633,29 +637,35 @@ impl Parser {
     }
 
     /// Parses a function given its type
-    /// 
+    ///
     /// Parameters:
     /// * `f_type`: type of function
     pub fn function(&mut self, f_type: FunctionType) {
-        let old_compiler = Rc::clone(&self.compiler);
-        self.compiler = Rc::new(RefCell::new(Compiler::new(
-            Rc::new(RefCell::new(self.clone())),
-            f_type,
-            Rc::new(RefCell::new(Some((*old_compiler).borrow().clone())))
-        )));
+        let old_compiler = self.compiler;
+        unsafe {
+            self.compiler = alloc(Layout::new::<Compiler>()) as *mut Compiler;
+            (*self.compiler).parser = &mut *self;
+            (*self.compiler).f_type = f_type;
+            (*self.compiler).enclosing = old_compiler;
+        }
 
         self.consume(TokenType::OpenParen, "Expected '(' after function name.");
         if !self.check(TokenType::CloseParen) {
             loop {
-                (*self.compiler).borrow_mut().function.deref().borrow_mut().arity += 1;
-                if (*self.compiler).borrow().function.deref().borrow().arity > u8::MAX.into() {
-                    self.error_at_current("Functions cannot take more than 255 parameters.");
+                unsafe { (*self.compiler).function.as_mut() }.unwrap().arity += 1;
+                if unsafe { (*self.compiler).function.as_ref() }.unwrap().arity > u8::MAX.into() {
+                    self.error_at_current(&format!(
+                        "Functions cannot take more than {} parameters.",
+                        u8::MAX
+                    ));
                 }
 
                 let constant = self.parse_variable("Expected parameter name.");
                 self.define_variable(constant);
 
-                if !self.match_token(TokenType::Comma) { break; }
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
             }
         }
 
@@ -663,19 +673,11 @@ impl Parser {
         self.consume(TokenType::OpenCurly, "Expected '{' before function body.");
         self.block();
 
-        let function = self.end_compiler();
-        let new_compiler = Rc::clone(&self.compiler);
+        let function = raw_clone(&self.end_compiler());
+        self.compiler = unsafe { self.compiler.as_ref() }.unwrap().enclosing;
 
-        let enclosing = (*new_compiler).borrow().clone();
-        self.compiler = Rc::new(RefCell::new(enclosing));
-
-        let constant = self.make_constant(Value::Function(Rc::new(function)));
+        let constant = self.make_constant(Value::Function(function));
         self.emit_instr_data(Opcode::Closure, constant.unwrap());
-
-        for upvalue in &(*new_compiler).borrow().upvalues {
-            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
-            self.emit_byte(upvalue.index);
-        }
     }
 
     /// Parses a method of a given class
@@ -698,7 +700,7 @@ impl Parser {
         let class_name = self.previous.text.clone();
         let name_const = self.identifier_constant(class_name.clone());
 
-        (*self.compiler).borrow_mut().declare_variable(self.previous.text.clone());
+        unsafe { self.compiler.as_mut() }.unwrap().declare_variable(self.previous.text.clone());
 
         self.emit_instr_data(Opcode::Class, name_const.unwrap());
         self.define_variable(name_const.unwrap());
@@ -711,13 +713,13 @@ impl Parser {
                 self.error("Classes cannot inherit from themselves as it wouldn't make any sense.");
             }
 
-            (*self.compiler).borrow_mut().begin_scope();
-            (*self.compiler).borrow_mut().add_local("super".to_string());
+            unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
+            unsafe { self.compiler.as_mut() }.unwrap().add_local("super".to_string());
             self.define_variable(0);
 
             self.named_variable(class_name.clone(), false);
             self.emit_instr(Opcode::Inherit);
-            (*self.class_compiler).borrow_mut().as_mut().unwrap().has_superclass = true;
+            unsafe { self.class_compiler.as_mut() }.unwrap().has_superclass = true;
         }
 
         self.named_variable(class_name.clone(), false);
@@ -730,17 +732,17 @@ impl Parser {
         self.consume(TokenType::CloseCurly, "Expected '}' after class body.");
         self.emit_instr(Opcode::Pop);
 
-        if (*self.class_compiler).borrow().as_ref().unwrap().has_superclass {
-            (*self.compiler).borrow_mut().end_scope();
+        if unsafe { self.class_compiler.as_ref() }.unwrap().has_superclass {
+            unsafe { self.compiler.as_mut() }.unwrap().end_scope();
         }
 
-        self.class_compiler = Rc::clone(&self.class_compiler)
+        self.class_compiler = unsafe { self.class_compiler.as_ref() }.unwrap().enclosing;
     }
 
     /// Declares a new function parsing it
     pub fn func_declaration(&mut self) {
         let global = self.parse_variable("Expected function name.");
-        (*self.compiler).borrow_mut().mark_initialized();
+        unsafe { self.compiler.as_mut() }.unwrap().mark_initialized();
         self.function(FunctionType::Function);
         self.define_variable(global);
     }
@@ -755,7 +757,10 @@ impl Parser {
             self.emit_instr(Opcode::Nop);
         }
 
-        self.consume(TokenType::Semicolon, "Expected ';' after variable declaration.");
+        self.consume(
+            TokenType::Semicolon,
+            "Expected ';' after variable declaration.",
+        );
         self.define_variable(global);
     }
 
@@ -768,7 +773,7 @@ impl Parser {
 
     /// Parses a for statement
     pub fn for_statement(&mut self) {
-        (*self.compiler).borrow_mut().begin_scope();
+        unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
 
         self.consume(TokenType::OpenParen, "Expected '(' after 'for'.");
         if self.match_token(TokenType::Var) {
@@ -779,7 +784,7 @@ impl Parser {
             self.expression_statement();
         }
 
-        let mut loop_start = (*self.current_chunk()).borrow().count();
+        let mut loop_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
         let mut exit_jump = -1;
 
         if !self.match_token(TokenType::Semicolon) {
@@ -792,7 +797,7 @@ impl Parser {
 
         if !self.match_token(TokenType::CloseParen) {
             let body_jump = self.emit_jump(Opcode::Jump);
-            let increment_start = (*self.current_chunk()).borrow().count();
+            let increment_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
 
             self.expression();
             self.emit_instr(Opcode::Pop);
@@ -812,7 +817,7 @@ impl Parser {
             self.emit_instr(Opcode::Pop);
         }
 
-        (*self.compiler).borrow_mut().end_scope();
+        unsafe { self.compiler.as_mut() }.unwrap().end_scope();
     }
 
     /// Parses an if statement
@@ -829,7 +834,7 @@ impl Parser {
         self.patch_jump(then_jump);
         self.emit_instr(Opcode::Pop);
 
-        if self.match_token(TokenType::Else) { 
+        if self.match_token(TokenType::Else) {
             self.statement();
         }
 
@@ -848,7 +853,9 @@ impl Parser {
             self.statement();
         }
 
-        if self.panic_mode { self.sync() };
+        if self.panic_mode {
+            self.sync()
+        };
     }
 
     /// Parses a statement
@@ -864,9 +871,9 @@ impl Parser {
         } else if self.match_token(TokenType::While) {
             self.while_statement();
         } else if self.match_token(TokenType::OpenCurly) {
-            (*self.compiler).borrow_mut().begin_scope();
+            unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
             self.block();
-            (*self.compiler).borrow_mut().end_scope();
+            unsafe { self.compiler.as_mut() }.unwrap().end_scope();
         } else {
             self.expression_statement();
         }
@@ -881,14 +888,14 @@ impl Parser {
 
     /// Parses a return statement
     pub fn return_statement(&mut self) {
-        if (*self.compiler).borrow().f_type == FunctionType::Main {
+        if unsafe { self.compiler.as_ref() }.unwrap().f_type == FunctionType::Main {
             self.error("Cannot return from main.");
         }
 
         if self.match_token(TokenType::Semicolon) {
             self.emit_return();
         } else {
-            if (*self.compiler).borrow().f_type == FunctionType::Initializer {
+            if unsafe { self.compiler.as_ref() }.unwrap().f_type == FunctionType::Initializer {
                 self.error("Cannot return values from class initializers.");
             }
 
@@ -900,7 +907,7 @@ impl Parser {
 
     /// Parses a while statement
     pub fn while_statement(&mut self) {
-        let loop_start = (*self.current_chunk()).borrow().count();
+        let loop_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
 
         self.consume(TokenType::OpenParen, "Expected '(' after 'while'.");
         self.expression();
@@ -922,10 +929,19 @@ impl Parser {
         self.panic_mode = false;
 
         while self.current.t_type != TokenType::Eof {
-            if self.previous.t_type == TokenType::Semicolon { return; }
+            if self.previous.t_type == TokenType::Semicolon {
+                return;
+            }
 
             match self.current.t_type {
-                TokenType::Class | TokenType::Func | TokenType::If | TokenType::While | TokenType::Print | TokenType::Return => { return; },
+                TokenType::Class
+                | TokenType::Func
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Print
+                | TokenType::Return => {
+                    return;
+                }
                 _ => (),
             }
 
@@ -934,7 +950,7 @@ impl Parser {
     }
 
     /// Errors at the last token
-    /// 
+    ///
     /// Parameters:
     /// * `message`: error message
     pub fn error(&mut self, message: &str) {
@@ -942,7 +958,7 @@ impl Parser {
     }
 
     /// Errors at current token
-    /// 
+    ///
     /// Parameters:
     /// * `message`: error message
     pub fn error_at_current(&mut self, message: &str) {
@@ -950,12 +966,14 @@ impl Parser {
     }
 
     /// Errors at the specified token
-    /// 
+    ///
     /// Parameters:
     /// * `token`: token to error at
     /// * `message`: error message
     pub fn error_at(&mut self, token: Token, message: &str) {
-        if self.panic_mode { return; }
+        if self.panic_mode {
+            return;
+        }
 
         self.panic_mode = true;
 
@@ -973,14 +991,8 @@ impl Parser {
         self.had_error = true;
     }
 
-    pub fn current_chunk(&mut self) -> Rc<RefCell<Chunk>> {
-        Rc::clone(
-            &(*self.compiler)
-                .borrow_mut()
-                .function
-                .deref()
-                .borrow_mut()
-                .chunk,
-        )
+    /// Returns current function Chunk
+    pub fn current_chunk(&mut self) -> *mut Chunk {
+        unsafe { (*self.compiler.as_mut().unwrap().function).chunk } 
     }
 }
