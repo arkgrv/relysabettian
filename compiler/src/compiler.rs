@@ -124,13 +124,13 @@ impl Compiler {
             return None;
         }
 
-        let local = self.enclosing.deref().borrow_mut().unwrap().resolve_local(name.clone());
+        let local = self.enclosing.deref().borrow_mut().as_mut().unwrap().resolve_local(name.clone());
         if local.is_some() {
-            self.enclosing.deref().borrow_mut().unwrap().locals[local.unwrap()].is_captured = true;
+            self.enclosing.deref().borrow_mut().as_mut().unwrap().locals[local.unwrap()].is_captured = true;
             return self.add_upvalue(local.unwrap() as u8, true);
         }
 
-        let upvalue = self.enclosing.deref().borrow_mut().unwrap().resolve_upvalue(name.clone());
+        let upvalue = self.enclosing.deref().borrow_mut().as_mut().unwrap().resolve_upvalue(name.clone());
         if upvalue.is_some() {
             return self.add_upvalue(upvalue.unwrap() as u8, false);
         }
