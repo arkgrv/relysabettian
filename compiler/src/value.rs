@@ -6,19 +6,19 @@ use crate::{instruction::Opcode, common::zero_init};
 pub const UINT8_COUNT: u16 = u8::MAX as u16 + 1;
 
 /// Function type
-type Function = Rc<RefCell<FuncRepr>>;
+pub type Function = Rc<RefCell<FuncRepr>>;
 /// Native Function type
-type NativeFunction = Rc<RefCell<NativeFuncRepr>>;
+pub type NativeFunction = Rc<RefCell<NativeFuncRepr>>;
 /// Closure type
-type Closure = Rc<RefCell<ClosureRepr>>;
+pub type Closure = Rc<RefCell<ClosureRepr>>;
 /// Upvalue type
-type Upvalue = Rc<RefCell<UpvalueRepr>>;
+pub type Upvalue = Rc<RefCell<UpvalueRepr>>;
 /// Class type
-type Class = Rc<RefCell<ClassRepr>>;
+pub type Class = Rc<RefCell<ClassRepr>>;
 /// Instance type
-type Instance = Rc<RefCell<InstanceRepr>>;
+pub type Instance = Rc<RefCell<InstanceRepr>>;
 /// Method type
-type Method = Rc<RefCell<MethodRepr>>;
+pub type Method = Rc<RefCell<MethodRepr>>;
 
 /// Represents any valid value in the language's
 /// runtime environment.
@@ -298,14 +298,14 @@ impl OutputVisitor for Value {
             }
             Value::NativeFunction(_) => print!("<native fn>"),
             Value::Closure(c) => {
-                Value::Function(c.deref().borrow().function).visit()
+                Value::Function(Rc::clone(&c.deref().borrow().function)).visit()
             },
             Value::Upvalue(_) => print!("upvalue"),
             Value::Instance(i) => {
                 print!("{} instance", i.deref().borrow().class.deref().borrow().name.clone());
             },
             Value::Method(m) => {
-                Value::Function(m.deref().borrow().method.deref().borrow().function).visit();
+                Value::Function(Rc::clone(&m.deref().borrow().method.deref().borrow().function)).visit();
             },
             _ => panic!("Unknown value!"),
         }
