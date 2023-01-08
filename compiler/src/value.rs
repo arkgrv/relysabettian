@@ -142,7 +142,7 @@ pub struct NativeFuncRepr {
 pub struct UpvalueRepr {
     pub location: Rc<RefCell<Value>>,
     pub closed: Value,
-    pub next: Rc<RefCell<Option<Value>>>,
+    pub next: Rc<RefCell<Option<UpvalueRepr>>>,
 }
 
 impl UpvalueRepr {
