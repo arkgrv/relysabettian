@@ -1,6 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, ops::Deref};
+use std::{collections::HashMap, rc::Rc, cell::RefCell, ops::Deref};
 
-use compiler::value::{Class, Closure, Instance, Method, Upvalue, Value};
+use compiler::value::{ClassRepr, MethodRepr, UpvalueRepr, Value, Class, Closure, Instance};
 
 use crate::{
     call_visitor::CallVisitor,
@@ -12,7 +12,7 @@ pub struct VirtualMachine {
     pub stack: Vec<Value>,
     pub frames: Vec<CallFrame>,
     pub globals: HashMap<String, Value>,
-    pub open_upvalues: Rc<RefCell<Option<Upvalue>>>,
+    pub open_upvalues: Rc<RefCell<Option<UpvalueRepr>>>,
 }
 
 impl VirtualMachine {
@@ -61,7 +61,7 @@ impl VirtualMachine {
     /// * `callee`: object being called
     /// * `arg_count`: number of arguments
     pub fn call_value(&mut self, callee: Rc<RefCell<Value>>, arg_count: usize) -> bool {
-        let mut visitor = CallVisitor::new(arg_count, Rc::new(RefCell::new(self)));
+        let mut visitor = CallVisitor::new(arg_count, self);
         visitor.visit(callee)
     }
 
@@ -83,6 +83,7 @@ impl VirtualMachine {
         }
 
         let instance = value.unwrap();
+        let instance = instance.deref().borrow();
         let value = instance.fields.get(&name);
 
         let len = self.stack.len();
@@ -91,7 +92,7 @@ impl VirtualMachine {
             return self.call_value(Rc::new(RefCell::new(value.unwrap().clone())), arg_count);
         }
 
-        self.invoke_from_class(Rc::clone(&instance.class), name, arg_count)
+        self.invoke_from_class(Rc::clone(&instance.deref().class), name, arg_count)
     }
 
     /// Invokes a method from a class
@@ -101,7 +102,7 @@ impl VirtualMachine {
     /// * `arg_count`: number of arguments
     pub fn invoke_from_class(
         &mut self,
-        class: Rc<RefCell<Class>>,
+        class: Class,
         name: String,
         arg_count: usize,
     ) -> bool {
@@ -114,7 +115,7 @@ impl VirtualMachine {
         }
 
         let method = found.unwrap();
-        self.call(Rc::new(method.clone()), arg_count)
+        self.call(Rc::clone(method), arg_count)
     }
 
     /// Binds a method to a class
@@ -122,7 +123,7 @@ impl VirtualMachine {
     /// Parameters:
     /// * `class_value`: class to bind to 
     /// * `name`: name of the method to bind
-    pub fn bind_method(&mut self, class_value: Rc<RefCell<Class>>, name: String) -> bool {
+    pub fn bind_method(&mut self, class_value: Rc<RefCell<ClassRepr>>, name: String) -> bool {
         let class = (*class_value).borrow();
         let found = class.methods.get(&name);
 
@@ -137,7 +138,7 @@ impl VirtualMachine {
             _ => None,
         };
 
-        let bound = Rc::new(Method::new(instance.unwrap().clone(), Rc::new(method)));
+        let bound = Rc::new(RefCell::new(MethodRepr::new(Rc::clone(instance.unwrap()), Rc::clone(&method))));
 
         self.pop();
         self.push(Value::Method(Rc::clone(&bound)));
@@ -149,29 +150,8 @@ impl VirtualMachine {
     /// 
     /// Parameters:
     /// * `local`: local value to capture
-    pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Rc<RefCell<Option<Upvalue>>> {
-        let mut prev_upvalue = Rc::new(RefCell::<Option<Upvalue>>::new(None));
-        let mut upvalue = self.open_upvalues;
-
-        while !(*upvalue).borrow().is_none() && (*upvalue).borrow().unwrap().location != local {
-            prev_upvalue = upvalue;
-            upvalue = (*upvalue).borrow().unwrap().next;
-        }
-
-        if (*upvalue).borrow().is_none() && (*upvalue).borrow().unwrap().location == local {
-            return None;
-        }
-
-        let mut new_upvalue = Upvalue::new(Rc::new(RefCell::new(Some((*local).borrow().clone()))));
-        new_upvalue.next = Rc::new(RefCell::new(Some(Value::Upvalue(upvalue))));
-
-        if (*prev_upvalue).borrow().is_none() {
-            self.open_upvalues = new_upvalue;
-        } else {
-            (*prev_upvalue).borrow().unwrap().next = new_upvalue;
-        }
-
-        new_upvalue
+    pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Rc<RefCell<Option<UpvalueRepr>>> {
+        panic!("Not implemented!")
     }
 
     pub fn close_upvalues(&mut self, last: Rc<RefCell<Value>>) {
@@ -182,7 +162,7 @@ impl VirtualMachine {
         panic!("Not implemented!")
     }
 
-    pub fn call(&mut self, closure: Rc<Closure>, arg_count: usize) -> bool {
+    pub fn call(&mut self, closure: Closure, arg_count: usize) -> bool {
         panic!("Not implemented!")
     }
 

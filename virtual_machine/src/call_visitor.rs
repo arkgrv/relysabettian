@@ -5,21 +5,21 @@ use compiler::value::{Value, NativeFunction, Closure};
 use crate::{common::STACK_MAX, vm::VirtualMachine};
 
 /// Call visitor implementation
-pub struct CallVisitor {
+pub struct CallVisitor<'a> {
     pub arg_count: usize,
-    pub vm: Rc<RefCell<VirtualMachine>>,
+    pub vm: &'a mut VirtualMachine,
 }
 
-impl CallVisitor {
+impl CallVisitor<'_> {
     /// Constructs a new Call visitor
     ///
     /// Parameters:
     /// * `arg_count`: number of arguments
     /// * `vm`: virtual machine
-    pub fn new(arg_count: usize, vm: Rc<RefCell<VirtualMachine>>) -> CallVisitor {
+    pub fn new(arg_count: usize, vm: &mut VirtualMachine) -> CallVisitor<'_> {
         CallVisitor {
             arg_count,
-            vm: Rc::clone(&vm),
+            vm,
         }
     }
 
@@ -32,20 +32,20 @@ impl CallVisitor {
     }
 
     fn visit_native_fn(&mut self, native: NativeFunction) -> bool {
-        let last = self.vm.deref().borrow().frames.len() - 1;
-        let new_size = self.vm.deref().borrow().frames.len() - self.arg_count - 1;
+        let last = self.vm.frames.len() - 1;
+        let new_size = self.vm.frames.len() - self.arg_count - 1;
 
-        let args = &self.vm.deref().borrow().stack[last - self.arg_count..=last];
+        let args = &self.vm.stack[last - self.arg_count..=last];
         let result = native.deref().borrow().function.deref().borrow()(self.arg_count, args.to_vec());
 
-        self.vm.deref().borrow_mut().stack.resize(new_size, Value::Null);
-        self.vm.deref().borrow_mut().stack.reserve(STACK_MAX);
-        self.vm.deref().borrow_mut().push(result);
+        self.vm.stack.resize(new_size, Value::Null);
+        self.vm.stack.reserve(STACK_MAX);
+        self.vm.push(result);
 
         true
     }
 
     fn visit_closure(&mut self, closure: Closure) -> bool {
-        self.vm.deref().borrow_mut().call(Rc::clone(&closure), self.arg_count)
+        self.vm.call(Rc::clone(&closure), self.arg_count)
     }
 }
