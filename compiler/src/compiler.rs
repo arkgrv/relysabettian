@@ -1,19 +1,19 @@
-use std::{alloc::alloc, alloc::Layout, ptr::null_mut};
+use std::{rc::Rc, cell::RefCell, ops::Deref};
 
 use crate::{
-    common::{FunctionType, InternalUpvalue, Local},
+    common::{FunctionType, InternalUpvalue, Local, zero_init},
     instruction::Opcode,
     parser::Parser,
-    value::{Function, UINT8_COUNT},
+    value::{FuncRepr, UINT8_COUNT, Function},
 };
 
 /// Implementation of a simple statements compiler
 #[derive(Clone)]
 pub struct Compiler {
-    pub parser: *mut Parser,
+    pub parser: Rc<RefCell<Parser>>,
     pub f_type: FunctionType,
-    pub function: *mut Function,
-    pub enclosing: *mut Compiler,
+    pub function: Function,
+    pub enclosing: Rc<RefCell<Option<Compiler>>>,
     pub locals: Vec<Local>,
     pub upvalues: Vec<InternalUpvalue>,
     pub scope_depth: i32,
@@ -26,20 +26,18 @@ impl Compiler {
     /// * `parser`: the compiler's internal parser
     /// * `f_type`: type of the function undergoing compilation
     /// * `enclosing`: enclosing (internal scope) compiler
-    pub fn new(parser: *mut Parser, f_type: FunctionType, enclosing: *mut Compiler) -> Compiler {
+    pub fn new(parser: Rc<RefCell<Parser>>, f_type: FunctionType, enclosing: Rc<RefCell<Option<Compiler>>>) -> Compiler {
         let mut compiler = Compiler {
             parser,
             f_type,
-            function: null_mut(),
-            enclosing,
+            function: zero_init(),
+            enclosing: Rc::clone(&enclosing),
             locals: Vec::new(),
             upvalues: Vec::new(),
             scope_depth: 0,
         };
 
-        compiler.function = unsafe { alloc(Layout::new::<Function>()) } as *mut Function;
-        unsafe { compiler.function.as_mut() }.unwrap().arity = 0;
-        unsafe { compiler.function.as_mut() }.unwrap().name = "".to_string();
+        compiler.function = Rc::new(RefCell::new(FuncRepr::new(0, "".to_string())));
 
         compiler.locals.push(Local::new(
             if f_type == FunctionType::Function {
@@ -63,8 +61,7 @@ impl Compiler {
     /// * `name`: new local value name
     pub fn add_local(&mut self, name: String) {
         if self.locals.len() == UINT8_COUNT.into() {
-            unsafe { self.parser.as_mut() }.unwrap()
-                .error("Functions do not allow more than 255 local variables.");
+            self.parser.borrow_mut().error("Functions do not allow more than 255 local variables.");
             return;
         }
 
@@ -85,8 +82,7 @@ impl Compiler {
                 break;
             }
             if self.locals[i].name == name {
-                unsafe { self.parser.as_mut() }.unwrap()
-                    .error("Variable already declared in this scope.");
+                self.parser.borrow_mut().error("Variable already declared in this scope.");
             }
         }
 
@@ -109,8 +105,7 @@ impl Compiler {
         for i in (0..=self.locals.len()).rev() {
             if self.locals[i].name == name {
                 if self.locals[i].depth == -1 {
-                    unsafe { self.parser.as_mut() }.unwrap()
-                        .error("Cannot read local variable when inside initializer.");
+                    self.parser.borrow_mut().error("Cannot read local variable during own initialization.");
                 }
 
                 return Some(i);
@@ -125,17 +120,17 @@ impl Compiler {
     /// Parameters:
     /// * `name`: name of the upvalue to resolve (find)
     pub fn resolve_upvalue(&mut self, name: String) -> Option<usize> {
-        if self.enclosing == null_mut() {
+        if self.enclosing.deref().borrow().is_none() {
             return None;
         }
 
-        let local = unsafe { self.enclosing.as_mut() }.unwrap().resolve_local(name.clone());
+        let local = self.enclosing.deref().borrow_mut().unwrap().resolve_local(name.clone());
         if local.is_some() {
-            unsafe { self.enclosing.as_mut() }.unwrap().locals[local.unwrap()].is_captured = true;
+            self.enclosing.deref().borrow_mut().unwrap().locals[local.unwrap()].is_captured = true;
             return self.add_upvalue(local.unwrap() as u8, true);
         }
 
-        let upvalue = unsafe { self.enclosing.as_mut() }.unwrap().resolve_upvalue(name);
+        let upvalue = self.enclosing.deref().borrow_mut().unwrap().resolve_upvalue(name.clone());
         if upvalue.is_some() {
             return self.add_upvalue(upvalue.unwrap() as u8, false);
         }
@@ -156,15 +151,13 @@ impl Compiler {
         }
 
         if self.upvalues.len() == UINT8_COUNT.into() {
-            unsafe { self.parser.as_mut() }.unwrap().error(
-                "Limits of closure variables exceeded! Max amount of closure variables is 255.",
-            );
+            self.parser.deref().borrow_mut().error("Limits of closure variables exceeded! Max amount of closure variables is 255.");
             return None;
         }
 
         self.upvalues.push(InternalUpvalue::new(index, is_local));
         let upvalue_count = self.upvalues.len();
-        unsafe { self.function.as_mut() }.unwrap().upvalue_count = upvalue_count;
+        self.function.deref().borrow_mut().upvalue_count = upvalue_count;
 
         Some(upvalue_count - 1)
     }
@@ -179,9 +172,9 @@ impl Compiler {
         self.scope_depth -= 1;
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             if self.locals.last().unwrap().is_captured {
-                unsafe { self.parser.as_mut() }.unwrap().emit_instr(Opcode::CloseUpvalue);
+                self.parser.deref().borrow_mut().emit_instr(Opcode::CloseUpvalue);
             } else {
-                unsafe { self.parser.as_mut() }.unwrap().emit_instr(Opcode::Pop);
+                self.parser.deref().borrow_mut().emit_instr(Opcode::Pop);
             }
 
             self.locals.pop();
@@ -196,7 +189,7 @@ impl Compiler {
 
 /// Compiler for classes
 pub struct ClassCompiler {
-    pub enclosing: *mut ClassCompiler,
+    pub enclosing: Rc<RefCell<Option<ClassCompiler>>>,
     pub has_superclass: bool,
 }
 
@@ -205,9 +198,9 @@ impl ClassCompiler {
     ///
     /// Parameters:
     /// * `enclosing`: enclosing class compiler
-    pub fn new(enclosing: *mut ClassCompiler) -> ClassCompiler {
+    pub fn new(enclosing: Rc<RefCell<Option<ClassCompiler>>>) -> ClassCompiler {
         ClassCompiler {
-            enclosing,
+            enclosing: Rc::clone(&enclosing),
             has_superclass: false,
         }
     }
