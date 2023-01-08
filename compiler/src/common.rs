@@ -1,4 +1,4 @@
-use std::{ops::Add, alloc::{alloc, Layout}, ptr::copy, mem::size_of};
+use std::{ops::Add};
 
 use crate::parser::Parser;
 
@@ -133,15 +133,8 @@ impl InternalUpvalue {
     }
 }
 
-/// Clones data from a Raw pointer allocating new memory
-/// 
-/// Parameters:
-/// * `src`: source of the data to copy
-pub fn raw_clone<T>(src: *const T) -> *mut T {
-    // Allocate memory for this type
-    unsafe {
-        let mem = alloc(Layout::new::<T>()) as *mut T;
-        copy(src, mem, size_of::<T>());
-        mem
-    }
+/// Returns a zero-initialzed value of the
+/// specified type
+pub fn zero_init<T>() -> T {
+    unsafe { std::mem::zeroed() }
 }
