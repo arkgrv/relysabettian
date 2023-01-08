@@ -1,7 +1,5 @@
 use std::{
-    alloc::{alloc, Layout},
-    num::ParseFloatError,
-    ptr::null_mut,
+    num::ParseFloatError, cell::RefCell, rc::Rc, ops::Deref,
 };
 
 use language::{
@@ -10,10 +8,10 @@ use language::{
 };
 
 use crate::{
-    common::{raw_clone, FunctionType, ParseRule, Precedence},
+    common::{FunctionType, ParseRule, Precedence, zero_init},
     compiler::{ClassCompiler, Compiler},
     instruction::Opcode,
-    value::{Chunk, Function, Value},
+    value::{Chunk, Value, Function},
 };
 
 /// Implementation of a shared parsing structure
@@ -23,8 +21,8 @@ pub struct Parser {
     pub current: Token,
     pub scanner: Tokenizer,
 
-    pub compiler: *mut Compiler,
-    pub class_compiler: *mut ClassCompiler,
+    pub compiler: Rc<RefCell<Compiler>>,
+    pub class_compiler: Rc<RefCell<Option<ClassCompiler>>>,
 
     pub had_error: bool,
     pub panic_mode: bool,
@@ -40,18 +38,17 @@ impl Parser {
             previous: Token::new(TokenType::Eof, source.clone(), 0),
             current: Token::new(TokenType::Eof, source.clone(), 0),
             scanner: Tokenizer::new(source.clone()),
-            compiler: null_mut(),
-            class_compiler: null_mut(),
+            compiler: zero_init(),
+            class_compiler: Rc::new(RefCell::new(None)),
             had_error: false,
             panic_mode: false,
         };
 
-        parser.compiler = unsafe { alloc(Layout::new::<Compiler>()) } as *mut Compiler;
-        unsafe {
-            (*parser.compiler).parser = &mut parser;
-            (*parser.compiler).f_type = FunctionType::Main;
-            (*parser.compiler).enclosing = null_mut();
-        }
+        parser.compiler = Rc::new(RefCell::<Compiler>::new(zero_init()));
+        parser.compiler.deref().borrow_mut().parser = Rc::new(RefCell::new(parser.clone()));
+        parser.compiler.deref().borrow_mut().f_type = FunctionType::Main;
+        parser.compiler.deref().borrow_mut().enclosing = Rc::new(RefCell::new(None));
+
         parser.advance();
 
         parser
@@ -119,7 +116,7 @@ impl Parser {
     /// Parameters:
     /// * `instr`: opcode of this instruction
     pub fn emit_instr(&mut self, instr: Opcode) {
-        unsafe { self.current_chunk().as_mut() }.unwrap().write_instr(instr, self.previous.line);
+        self.current_chunk().deref().borrow_mut().write_instr(instr, self.previous.line);
     }
 
     /// Emits a raw instruction or data padding
@@ -127,7 +124,7 @@ impl Parser {
     /// Parameters:
     /// * `byte`: instruction's byte value or data padding value
     pub fn emit_byte(&mut self, byte: u8) {
-        unsafe { self.current_chunk().as_mut() }.unwrap().write_byte(byte, self.previous.line);
+        self.current_chunk().deref().borrow_mut().write_byte(byte, self.previous.line);
     }
 
     /// Emits an instruction with correlated data or padding
@@ -157,7 +154,7 @@ impl Parser {
     pub fn emit_loop(&mut self, loop_start: usize) {
         self.emit_instr(Opcode::Loop);
 
-        let offset = unsafe { self.current_chunk().as_mut() }.unwrap().count() - loop_start - 2;
+        let offset = self.current_chunk().deref().borrow().count() - loop_start - 2;
         if offset > u16::MAX.into() {
             self.error("Loop body contains too many instructions.");
         }
@@ -175,12 +172,12 @@ impl Parser {
         self.emit_instr(instr);
         self.emit_byte(0xff);
         self.emit_byte(0xff);
-        unsafe { self.current_chunk().as_ref() }.unwrap().count() - 2
+        self.current_chunk().deref().borrow().count() - 2
     }
 
     /// Emits a new return
     pub fn emit_return(&mut self) {
-        if unsafe { self.compiler.as_mut() }.unwrap().f_type == FunctionType::Initializer {
+        if self.compiler.deref().borrow().f_type == FunctionType::Initializer {
             self.emit_instr_data(Opcode::GetLocal, 0);
         } else {
             self.emit_instr(Opcode::Nop);
@@ -194,7 +191,7 @@ impl Parser {
     /// Parameters:
     /// * `value`: value of the new constant
     pub fn make_constant(&mut self, value: Value) -> Option<u8> {
-        let constant = unsafe { self.current_chunk().as_mut() }.unwrap().add_constant(&value);
+        let constant = self.current_chunk().deref().borrow_mut().add_constant(&value);
         if constant > u8::MAX.into() {
             self.error("Max limit of constants reached.");
             return None;
@@ -220,22 +217,22 @@ impl Parser {
     /// Parameters:
     /// * `offset`: offset of the jump
     pub fn patch_jump(&mut self, offset: usize) {
-        let jump = unsafe { self.current_chunk().as_ref() }.unwrap().count() - offset - 2;
+        let jump = self.current_chunk().deref().borrow().count() - offset - 2;
         if jump > u16::MAX.into() {
             self.error("Jump is too long.");
         }
 
         let first_byte = ((jump >> 8) & 0xff) as u8;
         let second_byte = (jump & 0xff) as u8;
-        unsafe { self.current_chunk().as_mut() }.unwrap().set_code(offset, first_byte);
-        unsafe { self.current_chunk().as_mut() }.unwrap().set_code(offset + 1, second_byte);
+        self.current_chunk().deref().borrow_mut().set_code(offset, first_byte);
+        self.current_chunk().deref().borrow_mut().set_code(offset + 1, second_byte);
     }
 
     /// Ends this compiler and returns the corresponding function
     pub fn end_compiler(&mut self) -> Function {
         self.emit_return();
-        let function = unsafe { &*(*self.compiler).function };
-        function.clone()
+        let function = Rc::clone(&self.compiler.deref().borrow().function);
+        function
     }
 
     pub fn get_rule(&mut self, t_type: TokenType) -> ParseRule {
@@ -454,9 +451,9 @@ impl Parser {
 
     /// Parses a super (superclass) expression
     pub fn super_(parser: &mut Parser, _can_assign: bool) {
-        if parser.class_compiler == null_mut()  {
+        if parser.class_compiler.deref().borrow().is_none()  {
             parser.error("'super' cannot be used outside of a class instance.");
-        } else if !unsafe { (*parser.class_compiler).has_superclass } {
+        } else if !parser.class_compiler.deref().borrow().as_ref().unwrap().has_superclass {
             parser.error("'super' cannot be used in a class that does not inherit.");
         }
 
@@ -510,13 +507,13 @@ impl Parser {
     pub fn named_variable(&mut self, name: String, can_assign: bool) {
         let get_op: Opcode;
         let set_op: Opcode;
-        let arg = unsafe { self.compiler.as_mut() }.unwrap().resolve_local(name.clone());
+        let arg = self.compiler.deref().borrow_mut().resolve_local(name.clone());
 
         if arg.is_some() {
             get_op = Opcode::GetLocal;
             set_op = Opcode::SetLocal;
         } else {
-            let arg = unsafe { self.compiler.as_mut() }.unwrap().resolve_upvalue(name);
+            let arg = self.compiler.deref().borrow_mut().resolve_upvalue(name);
             if arg.is_some() {
                 get_op = Opcode::GetUpvalue;
                 set_op = Opcode::SetUpvalue;
@@ -578,8 +575,8 @@ impl Parser {
     pub fn parse_variable(&mut self, message: &str) -> u8 {
         self.consume(TokenType::Identifier, message);
 
-        unsafe { self.compiler.as_mut() .unwrap()}.declare_variable(self.previous.text.clone());
-        if unsafe { self.compiler.as_ref() }.unwrap().is_local() {
+        self.compiler.deref().borrow_mut().declare_variable(self.previous.text.clone());
+        if self.compiler.deref().borrow().is_local() {
             return 0;
         }
 
@@ -592,8 +589,8 @@ impl Parser {
     /// Parameters:
     /// * `global`: index of global variable
     pub fn define_variable(&mut self, global: u8) {
-        if unsafe { self.compiler.as_ref() }.unwrap().is_local() {
-            unsafe { self.compiler.as_mut() }.unwrap().mark_initialized();
+        if self.compiler.deref().borrow().is_local() {
+            self.compiler.deref().borrow_mut().mark_initialized();
             return;
         }
 
@@ -641,19 +638,17 @@ impl Parser {
     /// Parameters:
     /// * `f_type`: type of function
     pub fn function(&mut self, f_type: FunctionType) {
-        let old_compiler = self.compiler;
-        unsafe {
-            self.compiler = alloc(Layout::new::<Compiler>()) as *mut Compiler;
-            (*self.compiler).parser = &mut *self;
-            (*self.compiler).f_type = f_type;
-            (*self.compiler).enclosing = old_compiler;
-        }
+        let old_compiler = Rc::clone(&self.compiler);
+        self.compiler = Rc::new(RefCell::new(zero_init()));
+        self.compiler.deref().borrow_mut().parser = Rc::new(RefCell::new(self.clone()));
+        self.compiler.deref().borrow_mut().f_type = f_type;
+        self.compiler.deref().borrow_mut().enclosing = Rc::new(RefCell::new(Some(old_compiler.deref().borrow().clone())));
 
         self.consume(TokenType::OpenParen, "Expected '(' after function name.");
         if !self.check(TokenType::CloseParen) {
             loop {
-                unsafe { (*self.compiler).function.as_mut() }.unwrap().arity += 1;
-                if unsafe { (*self.compiler).function.as_ref() }.unwrap().arity > u8::MAX.into() {
+                self.compiler.deref().borrow_mut().function.deref().borrow_mut().arity +=1 ;
+                if self.compiler.deref().borrow().function.deref().borrow().arity > u8::MAX.into() {
                     self.error_at_current(&format!(
                         "Functions cannot take more than {} parameters.",
                         u8::MAX
@@ -673,10 +668,11 @@ impl Parser {
         self.consume(TokenType::OpenCurly, "Expected '{' before function body.");
         self.block();
 
-        let function = raw_clone(&self.end_compiler());
-        self.compiler = unsafe { self.compiler.as_ref() }.unwrap().enclosing;
+        let function = self.end_compiler();
+        let compiler = Rc::new(RefCell::new(self.compiler.borrow().enclosing.deref().borrow().as_ref().unwrap().clone()));
+        self.compiler = compiler;
 
-        let constant = self.make_constant(Value::Function(function));
+        let constant = self.make_constant(Value::Function(Rc::clone(&function)));
         self.emit_instr_data(Opcode::Closure, constant.unwrap());
     }
 
@@ -700,7 +696,7 @@ impl Parser {
         let class_name = self.previous.text.clone();
         let name_const = self.identifier_constant(class_name.clone());
 
-        unsafe { self.compiler.as_mut() }.unwrap().declare_variable(self.previous.text.clone());
+        self.compiler.deref().borrow_mut().declare_variable(self.previous.text.clone());
 
         self.emit_instr_data(Opcode::Class, name_const.unwrap());
         self.define_variable(name_const.unwrap());
@@ -713,13 +709,13 @@ impl Parser {
                 self.error("Classes cannot inherit from themselves as it wouldn't make any sense.");
             }
 
-            unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
-            unsafe { self.compiler.as_mut() }.unwrap().add_local("super".to_string());
+            self.compiler.deref().borrow_mut().begin_scope();
+            self.compiler.deref().borrow_mut().add_local("super".to_string());
             self.define_variable(0);
 
             self.named_variable(class_name.clone(), false);
             self.emit_instr(Opcode::Inherit);
-            unsafe { self.class_compiler.as_mut() }.unwrap().has_superclass = true;
+            self.class_compiler.deref().borrow_mut().as_mut().unwrap().has_superclass = true;
         }
 
         self.named_variable(class_name.clone(), false);
@@ -732,17 +728,18 @@ impl Parser {
         self.consume(TokenType::CloseCurly, "Expected '}' after class body.");
         self.emit_instr(Opcode::Pop);
 
-        if unsafe { self.class_compiler.as_ref() }.unwrap().has_superclass {
-            unsafe { self.compiler.as_mut() }.unwrap().end_scope();
+        if self.class_compiler.deref().borrow().as_ref().unwrap().has_superclass {
+            self.compiler.deref().borrow_mut().end_scope();
         }
 
-        self.class_compiler = unsafe { self.class_compiler.as_ref() }.unwrap().enclosing;
+        let class_compiler = Rc::clone(&self.class_compiler.deref().borrow().as_ref().unwrap().enclosing);
+        self.class_compiler = class_compiler;
     }
 
     /// Declares a new function parsing it
     pub fn func_declaration(&mut self) {
         let global = self.parse_variable("Expected function name.");
-        unsafe { self.compiler.as_mut() }.unwrap().mark_initialized();
+        self.compiler.deref().borrow_mut().mark_initialized();
         self.function(FunctionType::Function);
         self.define_variable(global);
     }
@@ -773,7 +770,7 @@ impl Parser {
 
     /// Parses a for statement
     pub fn for_statement(&mut self) {
-        unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
+        self.compiler.deref().borrow_mut().begin_scope();
 
         self.consume(TokenType::OpenParen, "Expected '(' after 'for'.");
         if self.match_token(TokenType::Var) {
@@ -784,7 +781,7 @@ impl Parser {
             self.expression_statement();
         }
 
-        let mut loop_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
+        let mut loop_start = self.current_chunk().deref().borrow().count();
         let mut exit_jump = -1;
 
         if !self.match_token(TokenType::Semicolon) {
@@ -797,7 +794,7 @@ impl Parser {
 
         if !self.match_token(TokenType::CloseParen) {
             let body_jump = self.emit_jump(Opcode::Jump);
-            let increment_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
+            let increment_start = self.current_chunk().deref().borrow().count();
 
             self.expression();
             self.emit_instr(Opcode::Pop);
@@ -817,7 +814,7 @@ impl Parser {
             self.emit_instr(Opcode::Pop);
         }
 
-        unsafe { self.compiler.as_mut() }.unwrap().end_scope();
+        self.compiler.deref().borrow_mut().end_scope();
     }
 
     /// Parses an if statement
@@ -871,9 +868,9 @@ impl Parser {
         } else if self.match_token(TokenType::While) {
             self.while_statement();
         } else if self.match_token(TokenType::OpenCurly) {
-            unsafe { self.compiler.as_mut() }.unwrap().begin_scope();
+            self.compiler.deref().borrow_mut().begin_scope();
             self.block();
-            unsafe { self.compiler.as_mut() }.unwrap().end_scope();
+            self.compiler.deref().borrow_mut().end_scope();
         } else {
             self.expression_statement();
         }
@@ -888,14 +885,15 @@ impl Parser {
 
     /// Parses a return statement
     pub fn return_statement(&mut self) {
-        if unsafe { self.compiler.as_ref() }.unwrap().f_type == FunctionType::Main {
+        
+        if self.compiler.deref().borrow().f_type == FunctionType::Main {
             self.error("Cannot return from main.");
         }
 
         if self.match_token(TokenType::Semicolon) {
             self.emit_return();
         } else {
-            if unsafe { self.compiler.as_ref() }.unwrap().f_type == FunctionType::Initializer {
+            if self.compiler.deref().borrow().f_type == FunctionType::Initializer {
                 self.error("Cannot return values from class initializers.");
             }
 
@@ -907,7 +905,7 @@ impl Parser {
 
     /// Parses a while statement
     pub fn while_statement(&mut self) {
-        let loop_start = unsafe { self.current_chunk().as_ref() }.unwrap().count();
+        let loop_start = self.current_chunk().deref().borrow().count();
 
         self.consume(TokenType::OpenParen, "Expected '(' after 'while'.");
         self.expression();
@@ -992,7 +990,7 @@ impl Parser {
     }
 
     /// Returns current function Chunk
-    pub fn current_chunk(&mut self) -> *mut Chunk {
-        unsafe { (*self.compiler.as_mut().unwrap().function).chunk } 
+    pub fn current_chunk(&mut self) -> Rc<RefCell<Chunk>> {
+        Rc::clone(&self.compiler.deref().borrow_mut().function.deref().borrow_mut().chunk)
     }
 }
