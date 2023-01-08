@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc, cell::RefCell, ops::Deref};
 
-use crate::instruction::Opcode;
+use crate::{instruction::Opcode, common::zero_init};
 
 /// Maximum number of UINT8 variables
 pub const UINT8_COUNT: u16 = u8::MAX as u16 + 1;
@@ -329,9 +329,4 @@ impl FalseVisitor for Value {
     fn visit_false(&self) -> bool {
         matches!(self, Value::Null)
     }
-}
-
-/// Returns a zero initialized value of type T
-fn zero_init<T>() -> T {
-    unsafe { std::mem::zeroed() }
 }
