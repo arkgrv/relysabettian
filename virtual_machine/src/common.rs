@@ -1,4 +1,4 @@
-use compiler::value::{UINT8_COUNT, Closure};
+use compiler::value::{UINT8_COUNT, ClosureRepr};
 
 /// Max number of stack frames
 pub const FRAMES_MAX: u16 = 64;
@@ -15,7 +15,7 @@ pub enum InterpretResult {
 
 /// Represents a VM call stack frame
 pub struct CallFrame {
-    pub closure: Closure,
+    pub closure: ClosureRepr,
     pub ip: usize,
     pub stack_offset: usize,
 }
@@ -27,7 +27,7 @@ impl CallFrame {
     /// * `closure`: closure value
     /// * `ip`: instruction pointer value
     /// * `stack_offset`: stack offset value
-    pub fn new(closure: Closure, ip: usize, stack_offset: usize) -> CallFrame {
+    pub fn new(closure: ClosureRepr, ip: usize, stack_offset: usize) -> CallFrame {
         CallFrame {
             closure,
             ip,
