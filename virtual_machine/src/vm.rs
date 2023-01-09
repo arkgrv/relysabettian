@@ -1,10 +1,10 @@
-use std::{collections::{HashMap, LinkedList}, rc::Rc, cell::RefCell, ops::Deref};
+use std::{collections::HashMap, rc::Rc, cell::RefCell, ops::Deref};
 
 use compiler::value::{ClassRepr, MethodRepr, UpvalueRepr, Value, Class, Closure, Instance};
 
 use crate::{
     call_visitor::CallVisitor,
-    common::{CallFrame, InterpretResult, STACK_MAX},
+    common::{CallFrame, InterpretResult, STACK_MAX}, rlinked_list::{RLinkedList, RNode},
 };
 
 /// Virtual Machine implementation
@@ -12,7 +12,7 @@ pub struct VirtualMachine {
     pub stack: Vec<Value>,
     pub frames: Vec<CallFrame>,
     pub globals: HashMap<String, Value>,
-    pub open_upvalues: LinkedList<UpvalueRepr>,
+    pub open_upvalues: RLinkedList<UpvalueRepr>,
 }
 
 impl VirtualMachine {
@@ -22,7 +22,7 @@ impl VirtualMachine {
             stack: Vec::new(),
             frames: Vec::new(),
             globals: HashMap::new(),
-            open_upvalues: LinkedList::new(),
+            open_upvalues: RNode::new_empty(),
         }
     }
 
@@ -31,7 +31,7 @@ impl VirtualMachine {
         self.stack.clear();
         self.frames.clear();
         self.stack.reserve(STACK_MAX);
-        self.open_upvalues = LinkedList::new();
+        self.open_upvalues = RNode::new_empty();
     }
 
     /// Pushes a new value onto the stack
@@ -151,18 +151,7 @@ impl VirtualMachine {
     /// Parameters:
     /// * `local`: local value to capture
     pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Rc<RefCell<Option<UpvalueRepr>>> {
-        let mut upvalues = self.open_upvalues.iter();
-        
-        loop {
-            let mut upvalue = upvalues.next();
-            if upvalue.is_none() || upvalue.unwrap().location == local {
-                let ret = upvalue.unwrap();
-                return Rc::new(RefCell::new(Some(ret.clone())));
-            }
-
-            let new_upvalue = UpvalueRepr::new(Rc::clone(&local));
-            
-        }
+        panic!("Not implemented!");
     }
 
     pub fn close_upvalues(&mut self, last: Rc<RefCell<Value>>) {
