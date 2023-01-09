@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, cell::RefCell, ops::Deref};
+use std::{collections::{HashMap, LinkedList}, rc::Rc, cell::RefCell, ops::Deref};
 
 use compiler::value::{ClassRepr, MethodRepr, UpvalueRepr, Value, Class, Closure, Instance};
 
@@ -12,7 +12,7 @@ pub struct VirtualMachine {
     pub stack: Vec<Value>,
     pub frames: Vec<CallFrame>,
     pub globals: HashMap<String, Value>,
-    pub open_upvalues: Rc<RefCell<Option<UpvalueRepr>>>,
+    pub open_upvalues: LinkedList<UpvalueRepr>,
 }
 
 impl VirtualMachine {
@@ -22,7 +22,7 @@ impl VirtualMachine {
             stack: Vec::new(),
             frames: Vec::new(),
             globals: HashMap::new(),
-            open_upvalues: Rc::new(RefCell::new(None)),
+            open_upvalues: LinkedList::new(),
         }
     }
 
@@ -31,7 +31,7 @@ impl VirtualMachine {
         self.stack.clear();
         self.frames.clear();
         self.stack.reserve(STACK_MAX);
-        self.open_upvalues = Rc::new(RefCell::new(None));
+        self.open_upvalues = LinkedList::new();
     }
 
     /// Pushes a new value onto the stack
@@ -151,7 +151,18 @@ impl VirtualMachine {
     /// Parameters:
     /// * `local`: local value to capture
     pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Rc<RefCell<Option<UpvalueRepr>>> {
-        panic!("Not implemented!")
+        let mut upvalues = self.open_upvalues.iter();
+        
+        loop {
+            let mut upvalue = upvalues.next();
+            if upvalue.is_none() || upvalue.unwrap().location == local {
+                let ret = upvalue.unwrap();
+                return Rc::new(RefCell::new(Some(ret.clone())));
+            }
+
+            let new_upvalue = UpvalueRepr::new(Rc::clone(&local));
+            
+        }
     }
 
     pub fn close_upvalues(&mut self, last: Rc<RefCell<Value>>) {

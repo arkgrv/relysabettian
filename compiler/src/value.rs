@@ -22,7 +22,7 @@ pub type Method = Rc<RefCell<MethodRepr>>;
 
 /// Represents any valid value in the language's
 /// runtime environment.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Value {
     Null,
     String(String),
@@ -137,8 +137,14 @@ pub struct NativeFuncRepr {
     pub function: NativeFn,
 }
 
+impl PartialEq for NativeFuncRepr {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
+
 /// Represents an upvalue in the language
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct UpvalueRepr {
     pub location: Rc<RefCell<Value>>,
     pub closed: Value,
@@ -160,7 +166,7 @@ impl UpvalueRepr {
 }
 
 /// Represents a class in the language
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ClassRepr {
     pub name: String,
     pub methods: HashMap<String, Closure>,
@@ -180,7 +186,7 @@ impl ClassRepr {
 }
 
 /// Represents an instance of a class
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct InstanceRepr {
     pub class: Class,
     pub fields: HashMap<String, Value>,
@@ -200,7 +206,7 @@ impl InstanceRepr {
 }
 
 /// Represents a class' method
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct MethodRepr {
     pub receiver: Instance,
     pub method: Closure,
@@ -252,7 +258,7 @@ impl PartialEq for FuncRepr {
 }
 
 /// Represents a function closure
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ClosureRepr {
     pub function: Function,
     pub upvalues: Vec<Upvalue>,
