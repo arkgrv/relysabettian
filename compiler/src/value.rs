@@ -138,7 +138,7 @@ pub struct NativeFuncRepr {
 }
 
 impl PartialEq for NativeFuncRepr {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         false
     }
 }
@@ -148,7 +148,7 @@ impl PartialEq for NativeFuncRepr {
 pub struct UpvalueRepr {
     pub location: Rc<RefCell<Value>>,
     pub closed: Value,
-    pub next: Rc<RefCell<Option<UpvalueRepr>>>,
+    pub next: Option<Rc<RefCell<UpvalueRepr>>>,
 }
 
 impl UpvalueRepr {
@@ -160,7 +160,7 @@ impl UpvalueRepr {
         UpvalueRepr {
             location: Rc::clone(&slot),
             closed: Value::Null,
-            next: Rc::new(RefCell::new(None)),
+            next: None,
         }
     }
 }
