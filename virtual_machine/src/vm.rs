@@ -1,10 +1,10 @@
 use std::{collections::HashMap, rc::Rc, cell::RefCell, ops::Deref};
 
-use compiler::value::{ClassRepr, MethodRepr, UpvalueRepr, Value, Class, Closure, Instance};
+use compiler::value::{ClassRepr, MethodRepr, UpvalueRepr, Value, Class, Closure};
 
 use crate::{
     call_visitor::CallVisitor,
-    common::{CallFrame, InterpretResult, STACK_MAX}, rlinked_list::{RLinkedList, RNode},
+    common::{CallFrame, InterpretResult, STACK_MAX},
 };
 
 /// Virtual Machine implementation
@@ -12,7 +12,7 @@ pub struct VirtualMachine {
     pub stack: Vec<Value>,
     pub frames: Vec<CallFrame>,
     pub globals: HashMap<String, Value>,
-    pub open_upvalues: RLinkedList<UpvalueRepr>,
+    pub open_upvalues: Option<Rc<RefCell<UpvalueRepr>>>,
 }
 
 impl VirtualMachine {
@@ -22,7 +22,7 @@ impl VirtualMachine {
             stack: Vec::new(),
             frames: Vec::new(),
             globals: HashMap::new(),
-            open_upvalues: RNode::new_empty(),
+            open_upvalues: None,
         }
     }
 
@@ -31,7 +31,7 @@ impl VirtualMachine {
         self.stack.clear();
         self.frames.clear();
         self.stack.reserve(STACK_MAX);
-        self.open_upvalues = RNode::new_empty();
+        self.open_upvalues = None;
     }
 
     /// Pushes a new value onto the stack
@@ -150,8 +150,29 @@ impl VirtualMachine {
     /// 
     /// Parameters:
     /// * `local`: local value to capture
-    pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Rc<RefCell<Option<UpvalueRepr>>> {
-        panic!("Not implemented!");
+    pub fn capture_upvalue(&mut self, local: Rc<RefCell<Value>>) -> Option<Rc<RefCell<UpvalueRepr>>> {
+        let mut prev_upvalue: Option<Rc<RefCell<UpvalueRepr>>> = None;
+        let mut upvalue = self.open_upvalues.clone();
+
+        while upvalue.is_some() && Rc::into_raw((*upvalue.clone().unwrap()).borrow().location.clone()) > Rc::into_raw(local.clone()) {
+            prev_upvalue = upvalue.clone();
+            upvalue = (*upvalue.unwrap()).borrow().next.clone();
+        }
+
+        if upvalue.is_some() && Rc::into_raw((*upvalue.clone().unwrap()).borrow().location.clone()) == Rc::into_raw(local.clone()) {
+            return upvalue;
+        }
+
+        let new_upvalue = Some(Rc::new(RefCell::new(UpvalueRepr::new(Rc::clone(&local)))));
+        (*new_upvalue.clone().unwrap()).borrow_mut().next = Some(Rc::clone(&upvalue.unwrap()));
+
+        if prev_upvalue.is_none() {
+            self.open_upvalues = new_upvalue.clone();
+        } else {
+            (*prev_upvalue.unwrap()).borrow_mut().next = new_upvalue.clone();
+        }
+
+        new_upvalue
     }
 
     pub fn close_upvalues(&mut self, last: Rc<RefCell<Value>>) {
